@@ -1,0 +1,77 @@
+services:
+  - type: web
+    name: irene-bot
+    env: node
+    plan: free
+    region: frankfurt
+    buildCommand: "npm install"
+    startCommand: "npm start"
+    envVars:
+      - key: OWNER_NUMBER
+        value: "255624236654"
+      - key: BOT_NAME
+        value: "Irene Bot"
+      - key: PREFIX
+        value: "#"
+      - key: PORT
+        value: "3000"
+      - key: SESSION_FOLDER
+        value: "./auth_info"
+      - key: ANTI_LINK
+        value: "on"
+      - key: ANTI_DELETE
+        value: "on"
+      - key: ANTI_MENTION
+        value: "on"
+      - key: ANTI_BOT
+        value: "on"
+      - key: ANTI_PORN
+        value: "on"
+      - key: WARN
+        value: "on"
+      - key: REMOVE
+        value: "on"
+      - key: KICK
+        value: "on"
+      - key: FAKE_RECORD
+        value: "on"
+      - key: AUTO_VIEW_STATUS
+        value: "on"
+      - key: AUTO_REACT_STATUS
+        value: "on"
+      - key: OPENAI_API_KEY
+        value: "<your_openai_api_key_here>"
+      - key: STABILITY_API_KEY
+        value: "<your_stability_api_key_here>"
+      - key: FLICKR_API_KEY
+        value: "<your_flickr_api_key_here>"
+      - key: PEXELS_API_KEY
+        value: "<your_pexels_api_key_here>"
+      - key: UNSPLASH_ACCESS_KEY
+        value: "<your_unsplash_access_key_here>"
+      - key: TENOR_API_KEY
+        value: "<your_tenor_api_key_here>"
+      - key: SOUNDCLOUD_CLIENT_ID
+        value: "<your_soundcloud_client_id_here>"
+      - key: YOUTUBE_API_KEY
+        value: "<your_youtube_api_key_here>"
+      - key: OPEN_WEATHER_KEY
+        value: "<your_openweather_api_key_here>"
+      - key: MEDIA_DIR
+        value: "./media"
+      - key: AUDIO_DIR
+        value: "./media/audio"
+      - key: VIDEO_DIR
+        value: "./media/video"
+      - key: IMAGE_DIR
+        value: "./media/images"
+      - key: STICKER_DIR
+        value: "./media/stickers"
+      - key: GIF_DIR
+        value: "./media/gifs"
+      - key: AUTO_TYPING
+        value: "off"
+      - key: AUTO_RECORDING
+        value: "on"
+      - key: AUTO_REACT
+        value: "on"
