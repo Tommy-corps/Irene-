@@ -8,5 +8,6 @@ module.exports = {
     const end = Date.now();
     const speed = end - start;
     await sock.sendMessage(msg.key.remoteJid, { text: `🥊 Pong! Speed: *${speed}ms*` });
+    🚀_____________DEV IRENE❤️_______________🚀
   }
 };
