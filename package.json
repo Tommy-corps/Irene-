@@ -1,9 +1,8 @@
 {
   "name": "irene-bot",
   "version": "1.0.0",
-  "description": "Irene Bot - WhatsApp Bot with 200+ features, owner-only, self-contained",
+  "description": "Irene Bot - WhatsApp Bot by Irene & Tommy",
   "main": "index.js",
-  "type": "module",
   "scripts": {
     "start": "node index.js"
   },
@@ -11,23 +10,24 @@
   "license": "MIT",
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.16",
-    "@hapi/boom": "^10.0.0",
     "qrcode-terminal": "^0.12.0",
     "express": "^4.18.2",
-    "pino": "^8.18.0",
+    "pino": "^8.12.0",
     "dotenv": "^16.3.1",
-    "node-fetch": "^3.4.1",
-    "axios": "^1.6.4",
-    "form-data": "^4.1.0",
-    "mime-types": "^2.1.35",
-    "fluent-ffmpeg": "^2.1.2",
-    "ffmpeg-static": "^5.1.0",
-    "canvas": "^2.12.1",
-    "chalk": "^5.3.0",
+    "fs-extra": "^11.1.1",
     "moment": "^2.29.4",
-    "moment-timezone": "^0.5.43",
-    "file-type": "^18.0.0",
+    "chalk": "^5.3.0",
+    "node-fetch": "^2.6.12",
+    "axios": "^1.7.6",
+    "form-data": "4.0.0",
+    "canvas": "2.11.0",
+    "mime-types": "^2.1.36",
+    "uuid": "^9.0.1",
     "jsdom": "^22.1.0",
-    "node-html-parser": "^6.1.1"
+    "cheerio": "^1.0.0-rc.12",
+    "bcryptjs": "^2.4.3",
+    "fluent-ffmpeg": "^2.1.2",
+    "sanitize-filename": "^1.6.3",
+    "p-limit": "^4.0.0"
   }
 }
