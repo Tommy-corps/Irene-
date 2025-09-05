@@ -21,7 +21,6 @@
     "axios": "^1.7.6",
     "form-data": "4.0.0",
     "canvas": "2.11.0",
-    "mime-types": "^2.1.36",
     "uuid": "^9.0.1",
     "jsdom": "^22.1.0",
     "cheerio": "^1.0.0-rc.12",
