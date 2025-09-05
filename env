@@ -1,0 +1,44 @@
+# ---------- BOT SETTINGS ----------
+OWNER_NUMBER=255624236654
+BOT_NAME=Irene Bot
+PREFIX=#
+SESSION_FOLDER=./auth_info
+PORT=3000
+STATUS_REACT=👍,🔥,❤️,😂,😍,😎,✨,👏,💯
+
+# ---------- FEATURE TOGGLES ----------
+ANTI_LINK=on
+ANTI_DELETE=on
+ANTI_MENTION=on
+ANTI_BOT=on
+ANTI_PORN=on
+WARN=on
+REMOVE=on
+KICK=on
+FAKE_RECORD=on
+AUTO_VIEW_STATUS=on
+AUTO_REACT_STATUS=on
+
+# ---------- MEDIA / AI KEYS ----------
+OPENAI_API_KEY=your_openai_api_key_here
+STABILITY_API_KEY=your_stability_api_key_here
+FLICKR_API_KEY=your_flickr_api_key_here
+PEXELS_API_KEY=your_pexels_api_key_here
+UNSPLASH_ACCESS_KEY=your_unsplash_access_key_here
+TENOR_API_KEY=your_tenor_api_key_here
+SOUNDCLOUD_CLIENT_ID=your_soundcloud_client_id_here
+YOUTUBE_API_KEY=your_youtube_api_key_here
+OPEN_WEATHER_KEY=your_openweather_api_key_here
+
+# ---------- MEDIA STORAGE ----------
+MEDIA_DIR=./media
+AUDIO_DIR=./media/audio
+VIDEO_DIR=./media/video
+IMAGE_DIR=./media/images
+STICKER_DIR=./media/stickers
+GIF_DIR=./media/gifs
+
+# ---------- FAKE PRESENCE ----------
+AUTO_TYPING=off
+AUTO_RECORDING=on
+AUTO_REACT=on
