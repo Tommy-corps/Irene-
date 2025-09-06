@@ -33,25 +33,42 @@ let sock;
 
 // -------- COMMAND LOADER --------
 function loadCommands() {
-  const commands = {};
+  const map = {};
   const cmdPath = path.join(__dirname, "commands");
-  if (!fs.existsSync(cmdPath)) return commands;
+  if (!fs.existsSync(cmdPath)) {
+    console.warn("⚠️ commands/ folder haipo:", cmdPath);
+    return map;
+  }
 
   const files = fs.readdirSync(cmdPath).filter(f => f.endsWith(".js"));
-  for (let file of files) {
+  for (const file of files) {
     try {
-      const cmd = require(path.join(cmdPath, file));
-      commands[cmd.name] = cmd;
+      const mod = require(path.join(cmdPath, file));
+      const cmd = mod?.default || mod; // support ESM default export
+
+      if (!cmd?.name || typeof cmd.execute !== "function") {
+        console.error(`⚠️ ${file} haina { name, execute }. Skipping.`);
+        continue;
+      }
+
+      map[cmd.name.toLowerCase()] = cmd;
+
+      // optional aliases
+      if (Array.isArray(cmd.aliases)) {
+        for (const a of cmd.aliases) map[a.toLowerCase()] = cmd;
+      }
+
       console.log(`✅ Command loaded: ${cmd.name}`);
     } catch (e) {
       console.error(`⚠️ Failed to load command ${file}:`, e.message);
     }
   }
-  return commands;
+
+  console.log("📦 Commands zilizosajiliwa:", Object.keys(map));
+  return map;
 }
 
 const commands = loadCommands();
-
 // -------- FAKE RECORD FUNCTION --------
 async function sendFakeRecording(jid) {
   try {
@@ -128,42 +145,47 @@ async function startBot() {
     }
   });
 
-  // -------- HANDLE DM & GROUP MESSAGES (OWNER ONLY) --------
-  sock.ev.on("messages.upsert", async (m) => {
-    try {
-      const msg = m.messages?.[0];
-      if (!msg?.message) return;
+  // -------- HANDLE DM & GROUP MESSAGES (OWNER ONLY) ---
+const OWNER = "255624236654";
+const normalize = s => (s || "").replace(/\D/g, "");
 
-      const from = msg.key.remoteJid;
-      const sender = msg.key.participant || from;
-      const body =
-        msg.message.conversation ||
-        msg.message.extendedTextMessage?.text ||
-        msg.message?.imageMessage?.caption ||
-        "";
+sock.ev.on("messages.upsert", async (m) => {
+  try {
+    const msg = m.messages?.[0];
+    if (!msg?.message) return;
 
-      // Owner-only
-      if (!sender.includes("255624236654")) return;
+    const from = msg.key.remoteJid;
+    const senderJid = msg.key.participant || from; // group -> participant, DM -> from
+    const senderNum = normalize(senderJid);        // "2556...@s.whatsapp.net" -> "2556..."
+    if (senderNum !== OWNER) return;               // owner-only
 
-      // Prefix # logic
-      if (body.startsWith("#")) {
-        const args = body.slice(1).trim().split(/ +/);
-        const cmdName = args.shift().toLowerCase();
+    const body =
+      msg.message.conversation ||
+      msg.message.extendedTextMessage?.text ||
+      msg.message?.imageMessage?.caption ||
+      "";
 
-        if (commands[cmdName]) {
-          await sendFakeRecording(from); // 🎤 show fake record before executing
-          await commands[cmdName].execute(sock, msg, args, settings);
-        } else {
-          await sendFakeRecording(from);
-          await sock.sendMessage(from, { text: `🚀 ${BOT_NAME}: Hakuna command inayoitwa *${cmdName}*` });
-        }
+    if (body.startsWith("#")) {
+      const args = body.slice(1).trim().split(/\s+/);
+      const cmdName = (args.shift() || "").toLowerCase();
+
+      const cmd = commands[cmdName];
+      if (!cmd) {
+        await sendFakeRecording(from);
+        await sock.sendMessage(from, {
+          text: `🚀 ${BOT_NAME}: Hakuna command inayoitwa *${cmdName}*.\n\n🔎 Zilizo-load: ${Object.keys(commands).map(c => `#${c}`).join(", ")}`
+        });
+        return;
       }
-    } catch (e) {
-      console.error("❌ messages.upsert error:", e);
-    }
-  });
-}
 
+      await sendFakeRecording(from);
+      await cmd.execute(sock, msg, args, settings);
+    }
+  } catch (e) {
+    console.error("❌ messages.upsert error:", e);
+  }
+});
+  }
 // -------- START BOT --------
 startBot();
 
