@@ -18,15 +18,18 @@ const PORT = process.env.PORT || 3000;
 // Commands folder
 const commandsPath = path.join(__dirname, "commands");
 const commands = new Map();
-if (fs.existsSync(commandsPath)) {
-  for (const file of fs.readdirSync(commandsPath).filter(f => f.endsWith(".js"))) {
+
+if (!fs.existsSync(commandsPath)) fs.mkdirSync(commandsPath);
+
+fs.readdirSync(commandsPath)
+  .filter(f => f.endsWith(".js"))
+  .forEach(file => {
     const cmd = require(path.join(commandsPath, file));
-    if (cmd.name) commands.set(cmd.name.toLowerCase(), cmd);
-  }
-} else {
-  fs.mkdirSync(commandsPath);
-  console.log("📂 Created commands folder.");
-}
+    if (cmd.name) {
+      commands.set(cmd.name.toLowerCase(), cmd);
+      console.log(`✅ Loaded command: ${cmd.name}`);
+    }
+  });
 
 // Start bot
 async function startBot() {
@@ -35,7 +38,7 @@ async function startBot() {
 
   const sock = makeWASocket({
     version,
-    printQRInTerminal: false,
+    printQRInTerminal: true,
     auth: {
       creds: state.creds,
       keys: makeCacheableSignalKeyStore(state.keys, P({ level: "silent" }))
@@ -45,20 +48,19 @@ async function startBot() {
 
   sock.ev.on("creds.update", saveCreds);
 
-  sock.ev.on("connection.update", async ({ connection, lastDisconnect }) => {
+  sock.ev.on("connection.update", ({ connection, lastDisconnect }) => {
     if (connection === "close") {
       const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
       if (shouldReconnect) startBot();
     } else if (connection === "open") {
       console.log("✅ Bot connected!");
+      sock.sendMessage(OWNER_JID, { text: `👋 Bot is online! Prefix: ${PREFIX}\nType ${PREFIX}menu` });
+
+      // Always recording
       setInterval(async () => {
         try { await sock.sendPresenceUpdate("recording", OWNER_JID); }
         catch (err) { console.error("⚠️ Presence error:", err); }
       }, 5000);
-
-      await sock.sendMessage(OWNER_JID, {
-        text: `👋 Bot is online! Prefix: ${PREFIX}\nType !menu to see commands.`
-      });
     }
   });
 
@@ -67,17 +69,22 @@ async function startBot() {
     if (!msg?.message) return;
 
     const from = msg.key.remoteJid;
+    const isGroup = from.endsWith("@g.us");
+    const sender = msg.key.participant || from;
 
+    // Extract text from message
     let body = "";
     if (msg.message.conversation) body = msg.message.conversation;
     else if (msg.message.extendedTextMessage?.text) body = msg.message.extendedTextMessage.text;
     else if (msg.message.imageMessage?.caption) body = msg.message.imageMessage.caption;
     else if (msg.message.videoMessage?.caption) body = msg.message.videoMessage.caption;
+
     body = body.trim();
     if (!body) return;
 
     console.log("📩 Message body:", body);
 
+    // Check if message is a command
     if (body.startsWith(PREFIX)) {
       const args = body.slice(PREFIX.length).trim().split(/\s+/);
       const cmdName = args.shift().toLowerCase();
@@ -87,7 +94,7 @@ async function startBot() {
           console.log("✅ Running command:", cmdName);
           await commands.get(cmdName).execute(sock, msg, args);
         } catch (err) {
-          console.error(`Error executing command ${cmdName}:`, err);
+          console.error(`❌ Error executing command ${cmdName}:`, err);
         }
       } else {
         await sock.sendMessage(from, { text: `❌ Hakuna command inayoitwa *${cmdName}*.` });
