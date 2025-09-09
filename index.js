@@ -13,16 +13,10 @@ const P = require("pino");
 const express = require("express");
 const qrcode = require("qrcode-terminal");
 
-
 // ----------- CONSTANTS -------------
 const OWNER_JID = "255624236654@s.whatsapp.net"; // 👑 Badili namba yako
 const PREFIX = "!";
 const PORT = process.env.PORT || 3000;
-
-// In-memory structures
-const antiLinkGroups = {}; // anti-link settings kwa kila group
-const emojiReactions = ["❤️", "😂", "🔥", "👍", "😎", "🤖"];
-const randomEmoji = () => emojiReactions[Math.floor(Math.random() * emojiReactions.length)];
 
 // -------- Commands folder --------
 const commandsPath = path.join(__dirname, "commands");
@@ -83,80 +77,28 @@ async function startBot() {
     if (!msg?.message) return;
 
     const from = msg.key.remoteJid;
-    const isGroup = from.endsWith("@g.us");
-    const sender = msg.key.participant || from;
-    const body = msg.message?.conversation ||
-                msg.message?.extendedTextMessage?.text ||
-                msg.message?.imageMessage?.caption || "";
 
-    // -------- ANTI-LINK FEATURE --------
-    if (isGroup && body.toLowerCase().startsWith(PREFIX + "antlink")) {
-      const args = body.trim().split(" ");
-      const sub = args[1]?.toLowerCase();
-      const option = args[2]?.toLowerCase();
-      antiLinkGroups[from] = antiLinkGroups[from] || { enabled: false, action: "remove" };
+    // -------- GET MESSAGE BODY SAFELY --------
+    let body = "";
+    if (msg.message.conversation) body = msg.message.conversation;
+    else if (msg.message.extendedTextMessage?.text) body = msg.message.extendedTextMessage.text;
+    else if (msg.message.imageMessage?.caption) body = msg.message.imageMessage.caption;
+    else if (msg.message.videoMessage?.caption) body = msg.message.videoMessage.caption;
 
-      if (sub === "on") {
-        antiLinkGroups[from].enabled = true;
-        await sock.sendMessage(from, { text: "✅ Anti-Link is now *ON*.", react: { text: "🛡️", key: msg.key } });
-      } else if (sub === "off") {
-        antiLinkGroups[from].enabled = false;
-        await sock.sendMessage(from, { text: "❌ Anti-Link is now *OFF*.", react: { text: "🚫", key: msg.key } });
-      } else if (sub === "action" && ["remove", "warn"].includes(option)) {
-        antiLinkGroups[from].action = option;
-        await sock.sendMessage(from, { text: `⚙️ Action set to *${option}*`, react: { text: "⚠️", key: msg.key } });
-      } else {
-        await sock.sendMessage(from, {
-          text: `🛡️ Use:\n${PREFIX}antlink on\n${PREFIX}antlink off\n${PREFIX}antlink action remove|warn`,
-          react: { text: "ℹ️", key: msg.key }
-        });
-      }
-    }
-
-    // enforce anti-link
-    if (isGroup && antiLinkGroups[from]?.enabled) {
-      const linkRegex = /https?:\/\/chat\.whatsapp\.com\/[A-Za-z0-9]{20,}/;
-      const action = antiLinkGroups[from].action;
-
-      if (linkRegex.test(body) && sender !== OWNER_JID) {
-        try {
-          const metadata = await sock.groupMetadata(from);
-          const botNumber = sock.user.id.split(":")[0] + "@s.whatsapp.net";
-          const botAdmin = metadata.participants.find(p => p.id === botNumber)?.admin;
-
-          if (!botAdmin) {
-            await sock.sendMessage(from, { text: "⚠️ I'm not admin, can't perform action." });
-            return;
-          }
-
-          if (action === "warn") {
-            await sock.sendMessage(from, {
-              text: `⚠️ *@${sender.split("@")[0]}*, link sharing not allowed!`,
-              mentions: [sender]
-            });
-          } else if (action === "remove") {
-            await sock.sendMessage(from, {
-              text: `🚫 *@${sender.split("@")[0]}* removed for sharing link.`,
-              mentions: [sender]
-            });
-            await sock.groupParticipantsUpdate(from, [sender], "remove");
-          }
-        } catch (err) {
-          console.error("Anti-Link Error:", err);
-        }
-      }
-    }
+    console.log("📩 Message body:", body);
 
     // -------- COMMAND EXECUTION --------
-    for (const [name, command] of commands) {
-      if (body.toLowerCase().startsWith(PREFIX + name)) {
+    if (body.startsWith(PREFIX)) {
+      const args = body.trim().split(/\s+/);
+      const cmdName = args.shift().slice(PREFIX.length).toLowerCase();
+
+      if (commands.has(cmdName)) {
         try {
-          const args = body.trim().split(/\s+/).slice(1);
-          await command.execute(sock, msg, args);
+          console.log("✅ Running command:", cmdName);
+          await commands.get(cmdName).execute(sock, msg, args);
         } catch (err) {
-          console.error(`Error executing command ${name}:`, err);
+          console.error(`Error executing command ${cmdName}:`, err);
         }
-        break;
       }
     }
   });
