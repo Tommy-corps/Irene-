@@ -14,7 +14,8 @@ const express = require("express");
 const qrcode = require("qrcode-terminal");
 
 // -------- SETTINGS --------
-const OWNER_NUMBER = "255624236654@s.whatsapp.net"; // 👑 Owner
+const OWNER_NUMBER = "255624236654@s.whatsapp.net"; // 👑 Owner JID
+const OWNER = "255624236654"; // 👑 Owner namba
 const sessionFolder = "./auth_info";
 const PORT = process.env.PORT || 3000;
 const STATUS_REACT = ["👍","🔥","❤️","😂","😍","😎","✨","👏","💯"];
@@ -69,14 +70,16 @@ function loadCommands() {
 }
 
 const commands = loadCommands();
-// -------- FAKE RECORD FUNCTION --------
-async function sendFakeRecording(jid) {
+
+// -------- KEEP RECORDING PRESENCE --------
+async function alwaysRecording() {
+  if (!sock) return;
   try {
-    await sock.sendPresenceUpdate("recording", jid); // 🎤 fake record
-    await new Promise(res => setTimeout(res, 2000)); // 2 sekunde
-    await sock.sendPresenceUpdate("available", jid);
+    setInterval(async () => {
+      await sock.sendPresenceUpdate("recording", OWNER_NUMBER);
+    }, 5000); // kila sekunde 5 anatuma "recording"
   } catch (e) {
-    console.error("⚠️ Fake record error:", e.message);
+    console.error("⚠️ Always recording error:", e.message);
   }
 }
 
@@ -120,6 +123,7 @@ async function startBot() {
     } else if (connection === "open") {
       console.log(`✅ ${BOT_NAME} imeunganishwa!`);
       sock.sendMessage(OWNER_NUMBER, { text: `👋 ${BOT_NAME} imewashwa na iko tayari!` });
+      alwaysRecording(); // muda wote ionekane inarekodi
     }
   });
 
@@ -146,46 +150,44 @@ async function startBot() {
   });
 
   // -------- HANDLE DM & GROUP MESSAGES (OWNER ONLY) ---
-const OWNER = "255624236654";
-const normalize = s => (s || "").replace(/\D/g, "");
+  const normalize = s => (s || "").replace(/\D/g, "");
 
-sock.ev.on("messages.upsert", async (m) => {
-  try {
-    const msg = m.messages?.[0];
-    if (!msg?.message) return;
+  sock.ev.on("messages.upsert", async (m) => {
+    try {
+      const msg = m.messages?.[0];
+      if (!msg?.message) return;
 
-    const from = msg.key.remoteJid;
-    const senderJid = msg.key.participant || from; // group -> participant, DM -> from
-    const senderNum = normalize(senderJid);        // "2556...@s.whatsapp.net" -> "2556..."
-    if (senderNum !== OWNER) return;               // owner-only
+      const from = msg.key.remoteJid;
+      const senderJid = msg.key.participant || from;
+      const senderNum = normalize(senderJid);
 
-    const body =
-      msg.message.conversation ||
-      msg.message.extendedTextMessage?.text ||
-      msg.message?.imageMessage?.caption ||
-      "";
+      if (senderNum !== OWNER) return; // owner-only
 
-    if (body.startsWith("#")) {
-      const args = body.slice(1).trim().split(/\s+/);
-      const cmdName = (args.shift() || "").toLowerCase();
+      const body =
+        msg.message.conversation ||
+        msg.message.extendedTextMessage?.text ||
+        msg.message?.imageMessage?.caption ||
+        "";
 
-      const cmd = commands[cmdName];
-      if (!cmd) {
-        await sendFakeRecording(from);
-        await sock.sendMessage(from, {
-          text: `🚀 ${BOT_NAME}: Hakuna command inayoitwa *${cmdName}*.\n\n🔎 Zilizo-load: ${Object.keys(commands).map(c => `#${c}`).join(", ")}`
-        });
-        return;
+      if (body.startsWith("#")) {
+        const args = body.slice(1).trim().split(/\s+/);
+        const cmdName = (args.shift() || "").toLowerCase();
+
+        const cmd = commands[cmdName];
+        if (!cmd) {
+          await sock.sendMessage(from, {
+            text: `🚀 ${BOT_NAME}: Hakuna command inayoitwa *${cmdName}*.\n\n🔎 Zilizo-load: ${Object.keys(commands).map(c => `#${c}`).join(", ")}`
+          });
+          return;
+        }
+
+        await cmd.execute(sock, msg, args, settings);
       }
-
-      await sendFakeRecording(from);
-      await cmd.execute(sock, msg, args, settings);
+    } catch (e) {
+      console.error("❌ messages.upsert error:", e);
     }
-  } catch (e) {
-    console.error("❌ messages.upsert error:", e);
-  }
-});
-  }
+  });
+}
 // -------- START BOT --------
 startBot();
 
@@ -195,7 +197,7 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
 app.get("/", (req, res) => {
-  res.send(`✅ ${BOT_NAME} is running (Owner-only, Prefix #, Auto Status View/React, Fake Record)`);
+  res.send(`✅ ${BOT_NAME} is running (Owner-only, Prefix #, Auto Status View/React, Always Recording)`);
 });
 
 app.listen(PORT, () => console.log(`🌐 Web server listening on :${PORT}`));
