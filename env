@@ -1,7 +1,7 @@
 # ---------- BOT SETTINGS ----------
 OWNER_NUMBER=255624236654
 BOT_NAME=Irene Bot
-PREFIX=#
+PREFIX=!
 SESSION_FOLDER=./auth_info
 PORT=3000
 STATUS_REACT=👍,🔥,❤️,😂,😍,😎,✨,👏,💯
