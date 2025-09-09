@@ -1,13 +1,10 @@
 module.exports = {
   name: "ping",
-  description: "Test responsiveness and show sender",
+  description: "Check bot responsiveness",
   async execute(sock, msg, args) {
-    // Pata jina la mtu aliye tuma message
-    let senderName = msg.pushName || msg.key.participant?.split("@")[0] || "Mtu wa kazi";
-
-    // Jibu message
+    const senderName = msg.pushName || msg.key.participant?.split("@")[0] || "Mtu wa kazi";
     await sock.sendMessage(msg.key.remoteJid, {
-      text: `🏓 Pong! 👋 Hello ${senderName}, bot iko tayari!`
+      text: `🏓 Pong! Hello ${senderName}, bot iko tayari!`
     });
   }
 };
