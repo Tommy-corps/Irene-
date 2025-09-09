@@ -17,7 +17,7 @@ const {
   downloadContentFromMessage,
 } = require("@whiskeysockets/baileys");
 
-const OWNER_JID = "255654478605@s.whatsapp.net";
+const OWNER_JID = "255624236654 @s.whatsapp.net";
 const PREFIX = "😁";
 const antiLinkGroups = {};
 const emojiReactions = ["❤️", "😂", "🔥", "👍", "😎", "🤖"];
