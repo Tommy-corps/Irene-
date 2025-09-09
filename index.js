@@ -72,37 +72,44 @@ async function startBot() {
   });
 
   // -------- HANDLE MESSAGES --------
-  sock.ev.on("messages.upsert", async ({ messages }) => {
-    const msg = messages[0];
-    if (!msg?.message) return;
+  // -------- HANDLE MESSAGES --------
+sock.ev.on("messages.upsert", async ({ messages }) => {
+  const msg = messages[0];
+  if (!msg?.message) return;
 
-    const from = msg.key.remoteJid;
+  const from = msg.key.remoteJid;
+  const isGroup = from.endsWith("@g.us");
 
-    // -------- GET MESSAGE BODY SAFELY --------
-    let body = "";
-    if (msg.message.conversation) body = msg.message.conversation;
-    else if (msg.message.extendedTextMessage?.text) body = msg.message.extendedTextMessage.text;
-    else if (msg.message.imageMessage?.caption) body = msg.message.imageMessage.caption;
-    else if (msg.message.videoMessage?.caption) body = msg.message.videoMessage.caption;
+  // Pata message text yoyote
+  let body = "";
+  if (msg.message.conversation) body = msg.message.conversation;
+  else if (msg.message.extendedTextMessage?.text) body = msg.message.extendedTextMessage.text;
+  else if (msg.message.imageMessage?.caption) body = msg.message.imageMessage.caption;
+  else if (msg.message.videoMessage?.caption) body = msg.message.videoMessage.caption;
 
-    console.log("📩 Message body:", body);
+  body = body.trim();
+  if (!body) return;
 
-    // -------- COMMAND EXECUTION --------
-    if (body.startsWith(PREFIX)) {
-      const args = body.trim().split(/\s+/);
-      const cmdName = args.shift().slice(PREFIX.length).toLowerCase();
+  console.log("📩 Message body:", body);
 
-      if (commands.has(cmdName)) {
-        try {
-          console.log("✅ Running command:", cmdName);
-          await commands.get(cmdName).execute(sock, msg, args);
-        } catch (err) {
-          console.error(`Error executing command ${cmdName}:`, err);
-        }
+  // -------- COMMAND EXECUTION --------
+  if (body.startsWith(PREFIX)) {
+    const args = body.slice(PREFIX.length).trim().split(/\s+/);
+    const cmdName = args.shift().toLowerCase();
+
+    if (commands.has(cmdName)) {
+      try {
+        console.log("✅ Running command:", cmdName);
+        await commands.get(cmdName).execute(sock, msg, args);
+      } catch (err) {
+        console.error(`Error executing command ${cmdName}:`, err);
       }
+    } else {
+      // Optional: reply if command haipo
+      await sock.sendMessage(from, { text: `❌ Hakuna command inayoitwa *${cmdName}*.` });
     }
-  });
-}
+  }
+});
 
 // -------- EXPRESS KEEP-ALIVE --------
 const app = express();
