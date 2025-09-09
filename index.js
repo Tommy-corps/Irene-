@@ -13,191 +13,160 @@ const P = require("pino");
 const express = require("express");
 const qrcode = require("qrcode-terminal");
 
-// -------- SETTINGS --------
-const OWNER_NUMBER = "255624236654@s.whatsapp.net"; // 👑 Owner JID
-const OWNER = "255624236654"; // 👑 Owner namba
-const sessionFolder = "./auth_info";
+
+// ----------- CONSTANTS -------------
+const OWNER_JID = "255624236654@s.whatsapp.net"; // 👑 Badili namba yako
+const PREFIX = "!";
 const PORT = process.env.PORT || 3000;
-const STATUS_REACT = ["👍","🔥","❤️","😂","😍","😎","✨","👏","💯"];
-const BOT_NAME = "Irene Bot";
 
-// Bot settings for commands
-let settings = {
-  antilink: false,
-  antimention: false,
-  antihidetag: false,
-  welcome: false,
-  goodbye: false,
-};
+// In-memory structures
+const antiLinkGroups = {}; // anti-link settings kwa kila group
+const emojiReactions = ["❤️", "😂", "🔥", "👍", "😎", "🤖"];
+const randomEmoji = () => emojiReactions[Math.floor(Math.random() * emojiReactions.length)];
 
-let sock;
-
-// -------- COMMAND LOADER --------
-function loadCommands() {
-  const map = {};
-  const cmdPath = path.join(__dirname, "commands");
-  if (!fs.existsSync(cmdPath)) {
-    console.warn("⚠️ commands/ folder haipo:", cmdPath);
-    return map;
+// -------- Commands folder --------
+const commandsPath = path.join(__dirname, "commands");
+const commands = new Map();
+if (fs.existsSync(commandsPath)) {
+  for (const file of fs.readdirSync(commandsPath).filter(f => f.endsWith(".js"))) {
+    const cmd = require(path.join(commandsPath, file));
+    if (cmd.name) commands.set(cmd.name.toLowerCase(), cmd);
   }
-
-  const files = fs.readdirSync(cmdPath).filter(f => f.endsWith(".js"));
-  for (const file of files) {
-    try {
-      const mod = require(path.join(cmdPath, file));
-      const cmd = mod?.default || mod; // support ESM default export
-
-      if (!cmd?.name || typeof cmd.execute !== "function") {
-        console.error(`⚠️ ${file} haina { name, execute }. Skipping.`);
-        continue;
-      }
-
-      map[cmd.name.toLowerCase()] = cmd;
-
-      // optional aliases
-      if (Array.isArray(cmd.aliases)) {
-        for (const a of cmd.aliases) map[a.toLowerCase()] = cmd;
-      }
-
-      console.log(`✅ Command loaded: ${cmd.name}`);
-    } catch (e) {
-      console.error(`⚠️ Failed to load command ${file}:`, e.message);
-    }
-  }
-
-  console.log("📦 Commands zilizosajiliwa:", Object.keys(map));
-  return map;
-}
-
-const commands = loadCommands();
-
-// -------- KEEP RECORDING PRESENCE --------
-async function alwaysRecording() {
-  if (!sock) return;
-  try {
-    setInterval(async () => {
-      await sock.sendPresenceUpdate("recording", OWNER_NUMBER);
-    }, 5000); // kila sekunde 5 anatuma "recording"
-  } catch (e) {
-    console.error("⚠️ Always recording error:", e.message);
-  }
+} else {
+  fs.mkdirSync(commandsPath);
+  console.log("📂 Created commands folder.");
 }
 
 // -------- START BOT --------
 async function startBot() {
-  const { state, saveCreds } = await useMultiFileAuthState(sessionFolder);
+  const { state, saveCreds } = await useMultiFileAuthState("./auth_info");
   const { version } = await fetchLatestBaileysVersion();
 
-  sock = makeWASocket({
+  const sock = makeWASocket({
     version,
-    logger: P({ level: "silent" }),
-    printQRInTerminal: true,
-    browser: [BOT_NAME, "Chrome", "1.0.0"],
+    printQRInTerminal: false,
     auth: {
       creds: state.creds,
-      keys: makeCacheableSignalKeyStore(
-        state.keys,
-        P().child({ level: "fatal", stream: "store" })
-      ),
+      keys: makeCacheableSignalKeyStore(state.keys, P({ level: "silent" }))
     },
-  });
-
-  // -------- CONNECTION UPDATE --------
-  sock.ev.on("connection.update", (update) => {
-    const { connection, lastDisconnect, qr } = update;
-
-    if (qr) {
-      qrcode.generate(qr, { small: true });
-      console.log("📷 Scan QR code hapa terminal!");
-    }
-
-    if (connection === "close") {
-      const reason = lastDisconnect?.error;
-      if (Boom.isBoom(reason)) console.log("❌ Boom error:", reason.output.payload);
-
-      const statusCode = reason?.output?.statusCode;
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-      console.log(`❌ Connection closed (status ${statusCode}). Reconnecting: ${shouldReconnect}`);
-
-      if (shouldReconnect) setTimeout(startBot, 3000); // retry after 3s
-    } else if (connection === "open") {
-      console.log(`✅ ${BOT_NAME} imeunganishwa!`);
-      sock.sendMessage(OWNER_NUMBER, { text: `👋 ${BOT_NAME} imewashwa na iko tayari!` });
-      alwaysRecording(); // muda wote ionekane inarekodi
-    }
+    logger: P({ level: "silent" })
   });
 
   sock.ev.on("creds.update", saveCreds);
 
-  // -------- AUTO VIEW + REACT STATUS --------
-  sock.ev.on("messages.upsert", async ({ messages, type }) => {
-    if (type === "notify") {
-      for (let msg of messages) {
-        if (msg.key.remoteJid.endsWith("@status")) {
-          try {
-            await sock.readMessages([msg.key]);
-            const react = STATUS_REACT[Math.floor(Math.random() * STATUS_REACT.length)];
-            await sock.sendMessage(msg.key.remoteJid, {
-              react: { text: react, key: msg.key },
-            });
-            console.log("✅ Status viewed + reacted:", react);
-          } catch (e) {
-            console.log("⚠️ View/react status error:", e.message);
-          }
+  // -------- CONNECTION UPDATE --------
+  sock.ev.on("connection.update", async ({ connection, lastDisconnect }) => {
+    if (connection === "close") {
+      const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
+      if (shouldReconnect) startBot();
+    } else if (connection === "open") {
+      console.log("✅ Bot connected!");
+
+      // Always recording every 5 seconds
+      setInterval(async () => {
+        try {
+          await sock.sendPresenceUpdate("recording", OWNER_JID);
+        } catch (err) {
+          console.error("⚠️ Presence error:", err);
         }
-      }
+      }, 5000);
+
+      await sock.sendMessage(OWNER_JID, {
+        text: `👋 Bot is online! Prefix: ${PREFIX}\nType !menu to see commands.`
+      });
     }
   });
 
-  // -------- HANDLE DM & GROUP MESSAGES (OWNER ONLY) ---
-  const normalize = s => (s || "").replace(/\D/g, "");
+  // -------- HANDLE MESSAGES --------
+  sock.ev.on("messages.upsert", async ({ messages }) => {
+    const msg = messages[0];
+    if (!msg?.message) return;
 
-  sock.ev.on("messages.upsert", async (m) => {
-    try {
-      const msg = m.messages?.[0];
-      if (!msg?.message) return;
+    const from = msg.key.remoteJid;
+    const isGroup = from.endsWith("@g.us");
+    const sender = msg.key.participant || from;
+    const body = msg.message?.conversation ||
+                msg.message?.extendedTextMessage?.text ||
+                msg.message?.imageMessage?.caption || "";
 
-      const from = msg.key.remoteJid;
-      const senderJid = msg.key.participant || from;
-      const senderNum = normalize(senderJid);
+    // -------- ANTI-LINK FEATURE --------
+    if (isGroup && body.toLowerCase().startsWith(PREFIX + "antlink")) {
+      const args = body.trim().split(" ");
+      const sub = args[1]?.toLowerCase();
+      const option = args[2]?.toLowerCase();
+      antiLinkGroups[from] = antiLinkGroups[from] || { enabled: false, action: "remove" };
 
-      if (senderNum !== OWNER) return; // owner-only
-
-      const body =
-        msg.message.conversation ||
-        msg.message.extendedTextMessage?.text ||
-        msg.message?.imageMessage?.caption ||
-        "";
-
-      if (body.startsWith("#")) {
-        const args = body.slice(1).trim().split(/\s+/);
-        const cmdName = (args.shift() || "").toLowerCase();
-
-        const cmd = commands[cmdName];
-        if (!cmd) {
-          await sock.sendMessage(from, {
-            text: `🚀 ${BOT_NAME}: Hakuna command inayoitwa *${cmdName}*.\n\n🔎 Zilizo-load: ${Object.keys(commands).map(c => `#${c}`).join(", ")}`
-          });
-          return;
-        }
-
-        await cmd.execute(sock, msg, args, settings);
+      if (sub === "on") {
+        antiLinkGroups[from].enabled = true;
+        await sock.sendMessage(from, { text: "✅ Anti-Link is now *ON*.", react: { text: "🛡️", key: msg.key } });
+      } else if (sub === "off") {
+        antiLinkGroups[from].enabled = false;
+        await sock.sendMessage(from, { text: "❌ Anti-Link is now *OFF*.", react: { text: "🚫", key: msg.key } });
+      } else if (sub === "action" && ["remove", "warn"].includes(option)) {
+        antiLinkGroups[from].action = option;
+        await sock.sendMessage(from, { text: `⚙️ Action set to *${option}*`, react: { text: "⚠️", key: msg.key } });
+      } else {
+        await sock.sendMessage(from, {
+          text: `🛡️ Use:\n${PREFIX}antlink on\n${PREFIX}antlink off\n${PREFIX}antlink action remove|warn`,
+          react: { text: "ℹ️", key: msg.key }
+        });
       }
-    } catch (e) {
-      console.error("❌ messages.upsert error:", e);
+    }
+
+    // enforce anti-link
+    if (isGroup && antiLinkGroups[from]?.enabled) {
+      const linkRegex = /https?:\/\/chat\.whatsapp\.com\/[A-Za-z0-9]{20,}/;
+      const action = antiLinkGroups[from].action;
+
+      if (linkRegex.test(body) && sender !== OWNER_JID) {
+        try {
+          const metadata = await sock.groupMetadata(from);
+          const botNumber = sock.user.id.split(":")[0] + "@s.whatsapp.net";
+          const botAdmin = metadata.participants.find(p => p.id === botNumber)?.admin;
+
+          if (!botAdmin) {
+            await sock.sendMessage(from, { text: "⚠️ I'm not admin, can't perform action." });
+            return;
+          }
+
+          if (action === "warn") {
+            await sock.sendMessage(from, {
+              text: `⚠️ *@${sender.split("@")[0]}*, link sharing not allowed!`,
+              mentions: [sender]
+            });
+          } else if (action === "remove") {
+            await sock.sendMessage(from, {
+              text: `🚫 *@${sender.split("@")[0]}* removed for sharing link.`,
+              mentions: [sender]
+            });
+            await sock.groupParticipantsUpdate(from, [sender], "remove");
+          }
+        } catch (err) {
+          console.error("Anti-Link Error:", err);
+        }
+      }
+    }
+
+    // -------- COMMAND EXECUTION --------
+    for (const [name, command] of commands) {
+      if (body.toLowerCase().startsWith(PREFIX + name)) {
+        try {
+          const args = body.trim().split(/\s+/).slice(1);
+          await command.execute(sock, msg, args);
+        } catch (err) {
+          console.error(`Error executing command ${name}:`, err);
+        }
+        break;
+      }
     }
   });
 }
-// -------- START BOT --------
-startBot();
 
-// -------- EXPRESS WEB SERVER --------
+// -------- EXPRESS KEEP-ALIVE --------
 const app = express();
 app.use(express.json());
-app.use(express.static(path.join(__dirname, "public")));
+app.get("/", (req, res) => res.send("✅ BEN WHITTAKER TECH BOT is running!"));
+app.listen(PORT, () => console.log(`🌐 Web server listening on port ${PORT}`));
 
-app.get("/", (req, res) => {
-  res.send(`✅ ${BOT_NAME} is running (Owner-only, Prefix #, Auto Status View/React, Always Recording)`);
-});
-
-app.listen(PORT, () => console.log(`🌐 Web server listening on :${PORT}`));
+// -------- START BOT --------
+startBot();
