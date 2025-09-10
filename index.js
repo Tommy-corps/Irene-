@@ -42,6 +42,27 @@ function setFeature(name, value) {
 // ---------------- GLOBAL WARN MAP ----------------
 if (!global.warnMap) global.warnMap = new Map(); // groupId -> {userId -> count}
 
+// ---------------- LOAD COMMANDS ----------------
+const commands = new Map();
+const commandsPath = path.join(__dirname, "commands");
+if (fs.existsSync(commandsPath)) {
+  const files = fs.readdirSync(commandsPath).filter(f => f.endsWith(".js"));
+  for (const file of files) {
+    try {
+      const command = require(path.join(commandsPath, file));
+      if (command.name && typeof command.execute === "function") {
+        commands.set(command.name.toLowerCase(), command);
+        console.log(`✅ Loaded command: ${command.name}`);
+      }
+    } catch (err) {
+      console.error(`❌ Failed to load command ${file}:`, err);
+    }
+  }
+} else {
+  fs.mkdirSync(commandsPath);
+  console.log("📂 Created commands folder.");
+}
+
 // ---------------- START BOT ----------------
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState("./auth_info");
@@ -153,11 +174,24 @@ async function startBot() {
         }
         return;
       }
+
+      // ---------------- EXECUTE COMMANDS FROM FOLDER ----------------
+      if (commands.has(cmdName)) {
+        try {
+          await commands.get(cmdName).execute(sock, msg, args);
+        } catch (err) {
+          console.error(`❌ Error executing command ${cmdName}:`, err);
+          await sock.sendMessage(from, { text: `❌ Error executing command: ${cmdName}` });
+        }
+      } else {
+        await sock.sendMessage(from, { text: `❌ Unknown command: ${cmdName}` });
+      }
     }
   });
 
   // ---------------- ANTI-DELETE ----------------
   sock.ev.on("messages.update", async (updates) => {
+    const features = getFeatures();
     if (!features.antidelete) return;
 
     for (const update of updates) {
@@ -182,14 +216,18 @@ async function startBot() {
   });
 
   // ---------------- STATUS REACT ----------------
+ // ---------------- STATUS REACT ----------------
   sock.ev.on("presence.update", async (update) => {
     if (update.type === "status") {
       const jid = update.id;
       try {
         await sock.sendMessage(jid, { react: { text: "😀", key: { remoteJid: jid, fromMe: true, id: Date.now().toString() } } });
-      } catch {}
+      } catch (err) {
+        console.error("Status react error:", err);
+      }
     }
   });
+
 }
 
 startBot().catch(err => console.error("❌ Bot start failed:", err));
