@@ -42,6 +42,27 @@ function setFeature(name, value) {
   fs.writeFileSync(featureFile, JSON.stringify(f, null, 2)); 
 }
 
+// ---------------- LOAD COMMANDS ----------------
+const commands = new Map();
+const commandsPath = path.join(__dirname, "commands");
+if (fs.existsSync(commandsPath)) {
+  const files = fs.readdirSync(commandsPath).filter(f => f.endsWith(".js"));
+  for (const file of files) {
+    try {
+      const command = require(path.join(commandsPath, file));
+      if (command.name && typeof command.execute === "function") {
+        commands.set(command.name.toLowerCase(), command);
+        console.log(`✅ Loaded command: ${command.name}`);
+      }
+    } catch (err) {
+      console.error(`❌ Failed to load command ${file}:`, err);
+    }
+  }
+} else {
+  fs.mkdirSync(commandsPath);
+  console.log("📂 Created commands folder.");
+}
+
 // ---------------- START BOT ----------------
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState("./auth_info");
@@ -142,6 +163,7 @@ async function startBot() {
       const args = body.slice(PREFIX.length).trim().split(/\s+/);
       const cmdName = args.shift().toLowerCase();
 
+      // Owner feature toggle
       if (cmdName === "set" && args.length === 2 && sender === OWNER_JID) {
         const featureName = args[0];
         const value = args[1].toLowerCase() === "on";
@@ -167,10 +189,21 @@ async function startBot() {
         return;
       }
 
-      await sock.sendMessage(from, { text: `❌ Hakuna command inayoitwa *${cmdName}*` });
+      // ---------------- EXECUTE COMMANDS FROM FOLDER ----------------
+      if (commands.has(cmdName)) {
+        try {
+          await commands.get(cmdName).execute(sock, msg, args);
+        } catch (err) {
+          console.error(`❌ Error executing command ${cmdName}:`, err);
+          await sock.sendMessage(from, { text: `❌ Error executing command: ${cmdName}` });
+        }
+      } else {
+        await sock.sendMessage(from, { text: `❌ Hakuna command inayoitwa *${cmdName}*` });
+      }
     }
   });
 
+  // ---------------- ANTI DELETE ----------------
   // ---------------- ANTI DELETE ----------------
   sock.ev.on("messages.update", async (updates) => {
     const features = getFeatures();
@@ -182,18 +215,31 @@ async function startBot() {
         const participant = update.key.participant || update.participant;
         const sender = participant ? `@${participant.split("@")[0]}` : "Mtu";
 
+        // Text messages
         if (update.message?.conversation) {
-          await sock.sendMessage(remoteJid, { text: `♻️ Anti-Delete: Meseji iliyofutwa na ${sender}\n\n${update.message.conversation}`, mentions: [participant] });
+          await sock.sendMessage(remoteJid, {
+            text: `♻️ Anti-Delete: Meseji iliyofutwa na ${sender}\n\n${update.message.conversation}`,
+            mentions: participant ? [participant] : []
+          });
         }
 
-        if (update.message?.imageMessage || update.message?.videoMessage || update.message?.documentMessage) {
-          const mtype = Object.keys(update.message)[0];
-          const buffer = await sock.downloadMediaMessage(update);
-          await sock.sendMessage(remoteJid, { [mtype.replace("Message","")]: buffer, caption: `♻️ Anti-Delete Media by ${sender}`, mentions: [participant] });
+        // Media messages
+        if (update.message?.imageMessage || update.message?.videoMessage || update.message?.documentMessage || update.message?.stickerMessage) {
+          const mtype = Object.keys(update.message)[0]; // imageMessage, videoMessage, etc.
+          try {
+            const buffer = await sock.downloadMediaMessage(update);
+            await sock.sendMessage(remoteJid, {
+              [mtype.replace("Message","")]: buffer,
+              caption: `♻️ Anti-Delete Media by ${sender}`,
+              mentions: participant ? [participant] : []
+            });
+          } catch (err) {
+            console.error("AntiDelete Media Error:", err);
+          }
         }
       }
     }
   });
 }
 
-startBot();
+startBot().catch(err => console.error("❌ Bot start failed:", err));
