@@ -27,8 +27,8 @@ app.listen(PORT, () => console.log(`✅ Express running on port ${PORT}`));
 // ---------------- FEATURES ----------------
 const featureFile = path.join(__dirname, "features.json");
 const defaultFeatures = {
-  antidelete: false,
-  antiLink: false,
+  antidelete: true,
+  antiLink: true,
   antiLinkAction: "warn", // warn|remove|delete
 };
 if (!fs.existsSync(featureFile)) fs.writeFileSync(featureFile, JSON.stringify(defaultFeatures, null, 2));
