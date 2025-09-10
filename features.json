@@ -1,0 +1,9 @@
+{
+  "antidelete": false,
+  "openViewOnce": false,
+  "antiMention": false,
+  "antiPorn": false,
+  "antiVideoSticker": false,
+  "antiLink": false,
+  "antiLinkAction": "remove"
+}
