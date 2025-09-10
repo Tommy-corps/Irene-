@@ -16,7 +16,7 @@ function fancy(text) {
 
 module.exports = {
   name: "hidetag",
-  description: "Send a hidden message in group 👻",
+  description: "Send a hidden message to all group members without showing names 👻",
   async execute(sock, msg) {
     const groupId = msg.key.remoteJid;
     if (!groupId.endsWith("@g.us")) {
@@ -25,14 +25,17 @@ module.exports = {
 
     const text = msg.message.conversation || fancy("💖 BOSS GIRL TECH ❤️ - Hidden message!");
 
-    // Fetch participants to hide mentions
+    // Fetch all participants JIDs
     const metadata = await sock.groupMetadata(groupId);
     const mentions = metadata.participants.map(p => p.id);
 
     // React to command
     await sock.sendMessage(groupId, { react: { text: "🤫", key: msg.key } });
 
-    // Send hidden message
-    await sock.sendMessage(groupId, { text, mentions });
+    // Send hidden message with mentions but **without showing any names**
+    await sock.sendMessage(groupId, {
+      text,
+      mentions
+    });
   }
 };
