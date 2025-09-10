@@ -70,7 +70,7 @@ async function startBot() {
 
   const sock = makeWASocket({
     version,
-    printQRInTerminal: true,
+    printQRInTerminal: false,
     auth: {
       creds: state.creds,
       keys: makeCacheableSignalKeyStore(state.keys, P({ level: "silent" })),
