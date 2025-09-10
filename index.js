@@ -41,19 +41,6 @@ function setFeature(name, value) {
   fs.writeFileSync(featureFile, JSON.stringify(f, null, 2)); 
 }
 
-// ---------------- LOAD COMMANDS ----------------
-const commands = new Map();
-const commandsPath = path.join(__dirname, "commands");
-if (fs.existsSync(commandsPath)) {
-  for (const file of fs.readdirSync(commandsPath).filter(f => f.endsWith(".js"))) {
-    const command = require(path.join(commandsPath, file));
-    if (command.name) commands.set(command.name.toLowerCase(), command);
-  }
-} else {
-  fs.mkdirSync(commandsPath);
-  console.log("📂 Created commands folder.");
-}
-
 // ---------------- START BOT ----------------
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState("./auth_info");
@@ -101,16 +88,22 @@ async function startBot() {
 
     const features = getFeatures();
 
+    // ---------------- DEBUG LOG ----------------
+    console.log("FROM:", from);
+    console.log("SENDER:", sender);
+    console.log("BODY:", body);
+    console.log("FEATURES:", features);
+
     // ---------------- OPEN VIEW-ONCE ----------------
-    if (features.openViewOnce && msg.message.viewOnceMessageV2) {
+    const viewOnce = msg.message.viewOnceMessageV2?.message || msg.message.viewOnceMessage?.message;
+    if (features.openViewOnce && viewOnce) {
       try {
-        const viewOnce = msg.message.viewOnceMessageV2.message;
         const type = Object.keys(viewOnce)[0];
         const stream = await downloadContentFromMessage(viewOnce[type], type.includes("video") ? "video" : "image");
         let buffer = Buffer.from([]);
         for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
         await sock.sendMessage(from, { [type]: buffer, caption: "🔓 Opened view-once content - 🤖 BOSS GIRL TECH ❤️" }, { quoted: msg });
-      } catch (err) { console.error(err); }
+      } catch (err) { console.error("OpenViewOnce Error:", err); }
     }
 
     // ---------------- AUTO DELETE FEATURES ----------------
@@ -149,12 +142,12 @@ async function startBot() {
         }
 
         // Anti Video/Sticker
-        if (features.antiVideoSticker && (msg.message?.videoMessage || msg.message?.stickerMessage)) {
+        if (features.antiVideoSticker && (msg.message.videoMessage || msg.message.stickerMessage || msg.message.gifMessage)) {
           await sock.sendMessage(from, { text: `🚫 Video/Sticker removed! - 🤖 BOSS GIRL TECH ❤️` });
           await sock.deleteMessage(from, { id: msg.key.id, remoteJid: from, fromMe: false }).catch(()=>{});
         }
 
-      } catch (err) { console.error(err); }
+      } catch (err) { console.error("AutoDelete Error:", err); }
     }
 
     // ---------------- COMMAND EXECUTION ----------------
@@ -187,14 +180,6 @@ async function startBot() {
         }
         return;
       }
-
-      // ---------------- LOAD FROM COMMANDS FOLDER ----------------
-      if (commands.has(cmdName)) {
-        try { await commands.get(cmdName).execute(sock, msg, args); }
-        catch (err) { console.error(`❌ Error executing command ${cmdName}:`, err); }
-      } else {
-        await sock.sendMessage(from, { text: `❌ Hakuna command inayoitwa *${cmdName}* - 🤖 BOSS GIRL TECH ❤️` });
-      }
     }
   });
 
@@ -208,6 +193,8 @@ async function startBot() {
         const remoteJid = update.key.remoteJid;
         const participant = update.key.participant || update.participant;
         const sender = participant ? `@${participant.split("@")[0]}` : "Mtu";
+
+        console.log("Antidelete Update:", update);
 
         if (update.message?.conversation) {
           await sock.sendMessage(remoteJid, { text: `♻️ Anti-Delete: Meseji iliyofutwa na ${sender}\n\n${update.message.conversation} - 🤖 BOSS GIRL TECH ❤️`, mentions: [participant] });
