@@ -23,7 +23,7 @@ app.use(express.json());
 app.get("/", (req, res) => res.send("🤖 BEN WHITTAKER TECH BOT is running!"));
 app.listen(PORT, () => console.log(`✅ Express running on port ${PORT}`));
 
-// ---------------- LOAD COMMANDS ----------------
+// ---------------- LOAD COMMANDS (Optional) ----------------
 const commands = new Map();
 const commandsPath = path.join(__dirname, "commands");
 if (fs.existsSync(commandsPath)) {
@@ -140,6 +140,17 @@ async function startBot() {
     if (body.startsWith(PREFIX)) {
       const args = body.slice(PREFIX.length).trim().split(/\s+/);
       const cmdName = args.shift().toLowerCase();
+
+      // ✅ Built-in Ping Command (No need for ping.js)
+      if (cmdName === "ping") {
+        const senderName = msg.pushName || msg.key.participant?.split("@")[0] || "Mtu wa kazi";
+        await sock.sendMessage(from, {
+          text: `🏓 Pong! Hello ${senderName}, bot iko tayari!`
+        });
+        return;
+      }
+
+      // If other commands exist in commands folder
       if (commands.has(cmdName)) {
         try {
           await sock.sendMessage(from, { text: "🕐 Loading..." });
