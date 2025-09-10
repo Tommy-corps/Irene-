@@ -1,6 +1,6 @@
+const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
-const VoiceRSS = require("voicerss-tts");
 
 // Fancy text converter (Rosemary)
 function fancy(text) {
@@ -17,54 +17,37 @@ function fancy(text) {
 
 module.exports = {
   name: "tts",
-  description: "Convert text to voice using VoiceRSS 🎤",
+  description: "Convert text to speech using VoiceRSS 🔊",
   async execute(sock, msg, args) {
     const text = args.join(" ");
-    if (!text) {
-      return await sock.sendMessage(msg.key.remoteJid, {
-        text: fancy("❌ Please provide text to convert to voice.\nUsage: !tts Hello world!")
-      });
-    }
+    if (!text) return await sock.sendMessage(msg.key.remoteJid, {
+      text: fancy("❌ Please provide text to convert to audio.\nUsage: !tts Hello World")
+    });
 
     // React to command
-    await sock.sendMessage(msg.key.remoteJid, { react: { text: "🎤", key: msg.key } });
+    await sock.sendMessage(msg.key.remoteJid, { react: { text: "🔊", key: msg.key } });
 
     try {
       const apiKey = process.env.VOICERSS_API_KEY;
       if (!apiKey) return await sock.sendMessage(msg.key.remoteJid, { text: fancy("❌ VOICERSS_API_KEY not set in .env") });
 
-      // Generate audio buffer
-      const audioBuffer = await VoiceRSS.speech({
-        key: apiKey,
-        src: text,
-        hl: "en-us",
-        v: "Linda",
-        r: 0,
-        c: "MP3",
-        f: "44khz_16bit_stereo"
-      });
+      const url = `https://api.voicerss.org/?key=${apiKey}&hl=en-us&src=${encodeURIComponent(text)}&c=MP3`;
 
-      // Save temporary file
-      const tempFile = path.join(__dirname, "../tmp/tts.mp3");
-      if (!fs.existsSync(path.dirname(tempFile))) fs.mkdirSync(path.dirname(tempFile));
-      fs.writeFileSync(tempFile, audioBuffer);
+      const response = await axios.get(url, { responseType: "arraybuffer" });
+      const audioFile = path.join(__dirname, "tts.mp3");
+      fs.writeFileSync(audioFile, response.data);
 
       // Send audio
-      await sock.sendMessage(msg.key.remoteJid, {
-        audio: fs.readFileSync(tempFile),
-        mimetype: "audio/mpeg",
-        ptt: false
-      });
+      await sock.sendMessage(msg.key.remoteJid, { audio: fs.readFileSync(audioFile), mimetype: "audio/mpeg" });
 
-      // Cleanup
-      fs.unlinkSync(tempFile);
+      // Confirmation message
+      await sock.sendMessage(msg.key.remoteJid, { text: fancy("✅ Audio sent successfully! 💖 𝓑𝓞𝓢𝓢 𝓖𝓘𝓡𝓛 𝓣𝓔𝓒𝓗 ❤️") });
 
-      // Send confirmation
-      await sock.sendMessage(msg.key.remoteJid, { text: fancy("✅ Voice generated successfully! 💖 𝓑𝓞𝓢𝓢 𝓖𝓘𝓡𝓛 𝓣𝓔𝓒𝓗 ❤️") });
-
+      // Clean up file
+      fs.unlinkSync(audioFile);
     } catch (err) {
       console.error(err);
-      await sock.sendMessage(msg.key.remoteJid, { text: fancy("❌ Failed to generate voice. Check your API key.") });
+      await sock.sendMessage(msg.key.remoteJid, { text: fancy("❌ Failed to generate audio.") });
     }
   }
 };
