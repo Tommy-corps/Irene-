@@ -1,9 +1,10 @@
 const axios = require("axios");
 const fs = require("fs");
 
+// 🔑 Stability AI Text-to-Image
 async function stabilityTextToImage(prompt) {
   try {
-    const apiKey = "sk-GPrKV4TIpQ8DHxH5LNbwi5xEIxyVsu47r2SoZrcLjjZbmGuK"; // Stability AI key
+    const apiKey = "sk-GPrKV4TIpQ8DHxH5LNbwi5xEIxyVsu47r2SoZrcLjjZbmGuK"; // Stability AI Key
     const response = await axios.post(
       "https://api.stability.ai/v1/generation/stable-diffusion-512-v2-1/text-to-image",
       {
@@ -33,16 +34,33 @@ async function stabilityTextToImage(prompt) {
   }
 }
 
-// Command
-if (cmd === "draw") {
-  if (!text) return sock.sendMessage(from, { text: "✍️ Andika maelezo ya picha unayotaka.\nMfano: !draw lion wearing sunglasses" });
+module.exports = {
+  name: "draw",
+  description: "Generate an AI image using Stability AI 🎨",
+  async execute(sock, msg, args) {
+    const from = msg.key.remoteJid;
+    const text = args.join(" ");
+    if (!text) {
+      return await sock.sendMessage(from, {
+        text: "✍️ *Write a description for the image you want*\nExample: !draw lion wearing sunglasses"
+      });
+    }
 
-  await sock.sendMessage(from, { text: "🎨 *Ninachora picha yako, subiri...*" });
+    // React to command
+    await sock.sendMessage(from, { react: { text: "🎨", key: msg.key } });
 
-  const imagePath = await stabilityTextToImage(text);
-  if (imagePath) {
-    await sock.sendMessage(from, { image: fs.readFileSync(imagePath), caption: `🖼️ *AI Image Generated*\n${text}` });
-  } else {
-    await sock.sendMessage(from, { text: "⚠️ Imeshindwa kutengeneza picha." });
+    // Notify user
+    await sock.sendMessage(from, { text: "🎨 *Drawing your image, please wait...*" });
+
+    // Generate Image
+    const imagePath = await stabilityTextToImage(text);
+    if (imagePath) {
+      await sock.sendMessage(from, {
+        image: fs.readFileSync(imagePath),
+        caption: `🖼️ *AI Image Generated Successfully*\n📌 Prompt: ${text}`
+      });
+    } else {
+      await sock.sendMessage(from, { text: "⚠️ *Failed to generate image.*" });
+    }
   }
-}
+};
