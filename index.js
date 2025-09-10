@@ -12,10 +12,11 @@ const {
   downloadContentFromMessage,
 } = require("@whiskeysockets/baileys");
 
-// ------------- CONFIG ----------------
-const OWNER_JID = "255624236654@s.whatsapp.net"; // 👑 Badili namba yako
+// ---------------- CONFIG ----------------
+const OWNER_JID = "255624236654@s.whatsapp.net"; // 👑 Change to your number
 const PREFIX = "!";
 const PORT = process.env.PORT || 3000;
+const WARN_LIMIT = 3;
 
 // ---------------- EXPRESS ----------------
 const app = express();
@@ -27,12 +28,8 @@ app.listen(PORT, () => console.log(`✅ Express running on port ${PORT}`));
 const featureFile = path.join(__dirname, "features.json");
 const defaultFeatures = {
   antidelete: false,
-  openViewOnce: false,
-  antiMention: false,
-  antiPorn: false,
-  antiVideoSticker: false,
   antiLink: false,
-  antiLinkAction: "remove"
+  antiLinkAction: "warn", // warn|remove|delete
 };
 if (!fs.existsSync(featureFile)) fs.writeFileSync(featureFile, JSON.stringify(defaultFeatures, null, 2));
 function getFeatures() { return JSON.parse(fs.readFileSync(featureFile)); }
@@ -42,26 +39,8 @@ function setFeature(name, value) {
   fs.writeFileSync(featureFile, JSON.stringify(f, null, 2)); 
 }
 
-// ---------------- LOAD COMMANDS ----------------
-const commands = new Map();
-const commandsPath = path.join(__dirname, "commands");
-if (fs.existsSync(commandsPath)) {
-  const files = fs.readdirSync(commandsPath).filter(f => f.endsWith(".js"));
-  for (const file of files) {
-    try {
-      const command = require(path.join(commandsPath, file));
-      if (command.name && typeof command.execute === "function") {
-        commands.set(command.name.toLowerCase(), command);
-        console.log(`✅ Loaded command: ${command.name}`);
-      }
-    } catch (err) {
-      console.error(`❌ Failed to load command ${file}:`, err);
-    }
-  }
-} else {
-  fs.mkdirSync(commandsPath);
-  console.log("📂 Created commands folder.");
-}
+// ---------------- GLOBAL WARN MAP ----------------
+if (!global.warnMap) global.warnMap = new Map(); // groupId -> {userId -> count}
 
 // ---------------- START BOT ----------------
 async function startBot() {
@@ -107,63 +86,48 @@ async function startBot() {
     const features = getFeatures();
     const botNumber = sock.user.id.split(":")[0] + "@s.whatsapp.net";
 
-    // ---------------- OPEN VIEW-ONCE ----------------
-    const viewOnce = msg.message.viewOnceMessageV2?.message || msg.message.viewOnceMessage?.message;
-    if (features.openViewOnce && viewOnce) {
-      try {
-        const type = Object.keys(viewOnce)[0];
-        const stream = await downloadContentFromMessage(viewOnce[type], type.includes("video") ? "video" : "image");
-        let buffer = Buffer.from([]);
-        for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
-        await sock.sendMessage(from, { [type]: buffer, caption: "🔓 Opened view-once content - 🤖 BOSS GIRL TECH ❤️" }, { quoted: msg });
-      } catch {}
-    }
+    // ---------------- ANTI-LINK ----------------
+    if (isGroup && features.antiLink) {
+      const linkRegex = /https?:\/\/chat\.whatsapp\.com\/[A-Za-z0-9]{20,}/;
+      if (linkRegex.test(body) && sender !== OWNER_JID) {
+        const action = features.antiLinkAction || "warn";
 
-    // ---------------- GROUP AUTO DELETE ----------------
-    if (isGroup) {
-      try {
-        // Anti-Link
-        if (features.antiLink) {
-          const linkRegex = /https?:\/\/chat\.whatsapp\.com\/[A-Za-z0-9]{20,}/;
-          if (linkRegex.test(body) && sender !== OWNER_JID) {
-            const action = features.antiLinkAction || "remove";
-            if (action === "warn") await sock.sendMessage(from, { text: `⚠️ *@${sender.split("@")[0]}* don't send links!`, mentions: [sender] });
-            else if (action === "remove") {
-              await sock.sendMessage(from, { text: `🚫 Removed *@${sender.split("@")[0]}*`, mentions: [sender] });
-              await sock.groupParticipantsUpdate(from, [sender], "remove").catch(()=>{});
-            } else if (action === "delete") {
-              await sock.sendMessage(from, { text: `🗑️ Link deleted!`, mentions: [sender] });
-              await sock.deleteMessage(from, { id: msg.key.id, remoteJid: from, fromMe: false }).catch(()=>{});
-            }
+        if (action === "warn") {
+          if (!global.warnMap.has(from)) global.warnMap.set(from, new Map());
+          const groupWarns = global.warnMap.get(from);
+          const prevWarn = groupWarns.get(sender) || 0;
+          const newWarn = prevWarn + 1;
+          groupWarns.set(sender, newWarn);
+
+          if (newWarn >= WARN_LIMIT) {
+            await sock.sendMessage(from, {
+              text: `🚨 @${sender.split("@")[0]} has reached the warn limit (${WARN_LIMIT})!\nRemoved from group.\n\n🤖 BOSS GIRL TECH ❤️`,
+              mentions: [sender],
+            });
+            await sock.groupParticipantsUpdate(from, [sender], "remove").catch(() => {});
+            groupWarns.delete(sender);
+          } else {
+            await sock.sendMessage(from, {
+              text: `⚠️ @${sender.split("@")[0]} received warn ${newWarn}/${WARN_LIMIT}\nDo not send links!\n\n🤖 BOSS GIRL TECH ❤️`,
+              mentions: [sender],
+            });
           }
+        } else if (action === "remove") {
+          await sock.sendMessage(from, { text: `🚫 @${sender.split("@")[0]} removed for sending link!\n\n🤖 BOSS GIRL TECH ❤️`, mentions: [sender] });
+          await sock.groupParticipantsUpdate(from, [sender], "remove").catch(() => {});
+        } else if (action === "delete") {
+          await sock.sendMessage(from, { text: `🗑️ Link deleted!\n\n🤖 BOSS GIRL TECH ❤️`, mentions: [sender] });
+          await sock.deleteMessage(from, { id: msg.key.id, remoteJid: from, fromMe: false }).catch(() => {});
         }
-
-        // Anti-Mention
-        if (features.antiMention && body.includes("@") && msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.includes(botNumber)) {
-          await sock.sendMessage(from, { text: `🚫 Mention removed!` });
-          await sock.deleteMessage(from, { id: msg.key.id, remoteJid: from, fromMe: false }).catch(()=>{});
-        }
-
-        // Anti-Porn
-        if (features.antiPorn && /porn|xxx|sex/i.test(body)) {
-          await sock.sendMessage(from, { text: `🚫 Porn/NSFW removed!`, mentions: [sender] });
-          await sock.deleteMessage(from, { id: msg.key.id, remoteJid: from, fromMe: false }).catch(()=>{});
-        }
-
-        // Anti Video/Sticker
-        if (features.antiVideoSticker && (msg.message.videoMessage || msg.message.stickerMessage || msg.message.gifMessage)) {
-          await sock.sendMessage(from, { text: `🚫 Video/Sticker removed!` });
-          await sock.deleteMessage(from, { id: msg.key.id, remoteJid: from, fromMe: false }).catch(()=>{});
-        }
-      } catch {}
+      }
     }
 
-    // ---------------- OWNER INLINE COMMANDS ----------------
+    // ---------------- OWNER COMMANDS ----------------
     if (body.startsWith(PREFIX)) {
       const args = body.slice(PREFIX.length).trim().split(/\s+/);
       const cmdName = args.shift().toLowerCase();
 
-      // Owner feature toggle
+      // Toggle features
       if (cmdName === "set" && args.length === 2 && sender === OWNER_JID) {
         const featureName = args[0];
         const value = args[1].toLowerCase() === "on";
@@ -176,6 +140,7 @@ async function startBot() {
         return;
       }
 
+      // AntiLink action
       if (cmdName === "antilink" && args[0] === "action" && sender === OWNER_JID) {
         const val = args[1]?.toLowerCase();
         if (["remove","warn","delete"].includes(val)) {
@@ -188,56 +153,41 @@ async function startBot() {
         }
         return;
       }
-
-      // ---------------- EXECUTE COMMANDS FROM FOLDER ----------------
-      if (commands.has(cmdName)) {
-        try {
-          await commands.get(cmdName).execute(sock, msg, args);
-        } catch (err) {
-          console.error(`❌ Error executing command ${cmdName}:`, err);
-          await sock.sendMessage(from, { text: `❌ Error executing command: ${cmdName}` });
-        }
-      } else {
-        await sock.sendMessage(from, { text: `❌ Hakuna command inayoitwa *${cmdName}*` });
-      }
     }
   });
 
-  // ---------------- ANTI DELETE ----------------
-  // ---------------- ANTI DELETE ----------------
+  // ---------------- ANTI-DELETE ----------------
   sock.ev.on("messages.update", async (updates) => {
-    const features = getFeatures();
     if (!features.antidelete) return;
 
     for (const update of updates) {
       if (update.update === "message-revoke") {
         const remoteJid = update.key.remoteJid;
         const participant = update.key.participant || update.participant;
-        const sender = participant ? `@${participant.split("@")[0]}` : "Mtu";
+        const sender = participant ? `@${participant.split("@")[0]}` : "Someone";
 
-        // Text messages
-        if (update.message?.conversation) {
-          await sock.sendMessage(remoteJid, {
-            text: `♻️ Anti-Delete: Meseji iliyofutwa na ${sender}\n\n${update.message.conversation}`,
-            mentions: participant ? [participant] : []
-          });
-        }
+        let content = "";
+        if (update.message?.conversation) content = update.message.conversation;
+        else if (update.message?.imageMessage) content = "[🖼️ Image]";
+        else if (update.message?.videoMessage) content = "[🎬 Video]";
+        else if (update.message?.audioMessage) content = "[🎵 Audio]";
+        else content = "[📎 Unknown message type]";
 
-        // Media messages
-        if (update.message?.imageMessage || update.message?.videoMessage || update.message?.documentMessage || update.message?.stickerMessage) {
-          const mtype = Object.keys(update.message)[0]; // imageMessage, videoMessage, etc.
-          try {
-            const buffer = await sock.downloadMediaMessage(update);
-            await sock.sendMessage(remoteJid, {
-              [mtype.replace("Message","")]: buffer,
-              caption: `♻️ Anti-Delete Media by ${sender}`,
-              mentions: participant ? [participant] : []
-            });
-          } catch (err) {
-            console.error("AntiDelete Media Error:", err);
-          }
-        }
+        await sock.sendMessage(remoteJid, {
+          text: `♻️ Anti-Delete: ${sender} deleted a message!\nContent: ${content}\n\n🤖 BOSS GIRL TECH ❤️`,
+          mentions: participant ? [participant] : [],
+        });
       }
+    }
+  });
+
+  // ---------------- STATUS REACT ----------------
+  sock.ev.on("presence.update", async (update) => {
+    if (update.type === "status") {
+      const jid = update.id;
+      try {
+        await sock.sendMessage(jid, { react: { text: "😀", key: { remoteJid: jid, fromMe: true, id: Date.now().toString() } } });
+      } catch {}
     }
   });
 }
