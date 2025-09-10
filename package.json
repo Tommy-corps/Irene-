@@ -27,7 +27,6 @@
     "bcryptjs": "^2.4.3",
     "fluent-ffmpeg": "^2.1.2",
     "sanitize-filename": "^1.6.3",
-    "p-limit": "^4.0.0",
-    "voicerss-tts": "^1.0.1"
+    "p-limit": "^4.0.0"
   }
 }
