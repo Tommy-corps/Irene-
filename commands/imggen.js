@@ -24,7 +24,7 @@ module.exports = {
       const response = await axios.post("https://api.deepai.org/api/text2img", {
         text: args.join(" ")
       }, {
-        headers: { "api-key": process.env.DEEP_AI_KEY }
+        headers: { "api-key": "5bfeb575-9bb2-4847-acf4-f32d0d3d713a" }
       });
 
       if (response.data && response.data.output_url) {
