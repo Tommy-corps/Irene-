@@ -12,6 +12,7 @@ const {
   downloadContentFromMessage,
 } = require("@whiskeysockets/baileys");
 
+// ------------- CONFIG ----------------
 const OWNER_JID = "255624236654@s.whatsapp.net"; // 👑 Badili namba yako
 const PREFIX = "!";
 const PORT = process.env.PORT || 3000;
@@ -22,7 +23,7 @@ app.use(express.json());
 app.get("/", (req, res) => res.send("🤖 BOSS GIRL TECH ❤️ Bot is running!"));
 app.listen(PORT, () => console.log(`✅ Express running on port ${PORT}`));
 
-// ---------------- FEATURE SETTINGS ----------------
+// ---------------- FEATURES ----------------
 const featureFile = path.join(__dirname, "features.json");
 const defaultFeatures = {
   antidelete: false,
@@ -48,7 +49,7 @@ async function startBot() {
 
   const sock = makeWASocket({
     version,
-    printQRInTerminal: false,
+    printQRInTerminal: true,
     auth: {
       creds: state.creds,
       keys: makeCacheableSignalKeyStore(state.keys, P({ level: "silent" })),
@@ -64,14 +65,10 @@ async function startBot() {
     } else if (connection === "open") {
       console.log("✅ Bot connected!");
       await sock.sendMessage(OWNER_JID, { text: "🤖 BOSS GIRL TECH ❤️ Bot online! All features are OFF by default." });
-      setInterval(async () => {
-        try { await sock.sendPresenceUpdate("recording", OWNER_JID); }
-        catch (err) { console.error(err); }
-      }, 5000);
     }
   });
 
-  // ---------------- HANDLE MESSAGES ----------------
+  // ---------------- MESSAGE HANDLER ----------------
   sock.ev.on("messages.upsert", async ({ messages }) => {
     const msg = messages[0];
     if (!msg?.message) return;
@@ -87,12 +84,7 @@ async function startBot() {
     if (!body) return;
 
     const features = getFeatures();
-
-    // ---------------- DEBUG LOG ----------------
-    console.log("FROM:", from);
-    console.log("SENDER:", sender);
-    console.log("BODY:", body);
-    console.log("FEATURES:", features);
+    const botNumber = sock.user.id.split(":")[0] + "@s.whatsapp.net";
 
     // ---------------- OPEN VIEW-ONCE ----------------
     const viewOnce = msg.message.viewOnceMessageV2?.message || msg.message.viewOnceMessage?.message;
@@ -103,67 +95,61 @@ async function startBot() {
         let buffer = Buffer.from([]);
         for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
         await sock.sendMessage(from, { [type]: buffer, caption: "🔓 Opened view-once content - 🤖 BOSS GIRL TECH ❤️" }, { quoted: msg });
-      } catch (err) { console.error("OpenViewOnce Error:", err); }
+      } catch {}
     }
 
-    // ---------------- AUTO DELETE FEATURES ----------------
+    // ---------------- GROUP AUTO DELETE ----------------
     if (isGroup) {
-      const botNumber = sock.user.id.split(":")[0] + "@s.whatsapp.net";
       try {
         // Anti-Link
         if (features.antiLink) {
           const linkRegex = /https?:\/\/chat\.whatsapp\.com\/[A-Za-z0-9]{20,}/;
           if (linkRegex.test(body) && sender !== OWNER_JID) {
             const action = features.antiLinkAction || "remove";
-            if (action === "warn") await sock.sendMessage(from, { text: `⚠️ *@${sender.split("@")[0]}* don't send links! - 🤖 BOSS GIRL TECH ❤️`, mentions: [sender] });
+            if (action === "warn") await sock.sendMessage(from, { text: `⚠️ *@${sender.split("@")[0]}* don't send links!`, mentions: [sender] });
             else if (action === "remove") {
-              await sock.sendMessage(from, { text: `🚫 Removed *@${sender.split("@")[0]}* - 🤖 BOSS GIRL TECH ❤️`, mentions: [sender] });
+              await sock.sendMessage(from, { text: `🚫 Removed *@${sender.split("@")[0]}*`, mentions: [sender] });
               await sock.groupParticipantsUpdate(from, [sender], "remove").catch(()=>{});
             } else if (action === "delete") {
-              await sock.sendMessage(from, { text: `🗑️ Link deleted! - 🤖 BOSS GIRL TECH ❤️`, mentions: [sender] });
+              await sock.sendMessage(from, { text: `🗑️ Link deleted!`, mentions: [sender] });
               await sock.deleteMessage(from, { id: msg.key.id, remoteJid: from, fromMe: false }).catch(()=>{});
             }
           }
         }
 
         // Anti-Mention
-        if (features.antiMention && body.includes("@")) {
-          const mentions = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
-          if (mentions.includes(botNumber)) {
-            await sock.sendMessage(from, { text: `🚫 Mention removed! - 🤖 BOSS GIRL TECH ❤️` });
-            await sock.deleteMessage(from, { id: msg.key.id, remoteJid: from, fromMe: false }).catch(()=>{});
-          }
+        if (features.antiMention && body.includes("@") && msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.includes(botNumber)) {
+          await sock.sendMessage(from, { text: `🚫 Mention removed!` });
+          await sock.deleteMessage(from, { id: msg.key.id, remoteJid: from, fromMe: false }).catch(()=>{});
         }
 
         // Anti-Porn
         if (features.antiPorn && /porn|xxx|sex/i.test(body)) {
-          await sock.sendMessage(from, { text: `🚫 Porn/NSFW removed! - 🤖 BOSS GIRL TECH ❤️`, mentions: [sender] });
+          await sock.sendMessage(from, { text: `🚫 Porn/NSFW removed!`, mentions: [sender] });
           await sock.deleteMessage(from, { id: msg.key.id, remoteJid: from, fromMe: false }).catch(()=>{});
         }
 
         // Anti Video/Sticker
         if (features.antiVideoSticker && (msg.message.videoMessage || msg.message.stickerMessage || msg.message.gifMessage)) {
-          await sock.sendMessage(from, { text: `🚫 Video/Sticker removed! - 🤖 BOSS GIRL TECH ❤️` });
+          await sock.sendMessage(from, { text: `🚫 Video/Sticker removed!` });
           await sock.deleteMessage(from, { id: msg.key.id, remoteJid: from, fromMe: false }).catch(()=>{});
         }
-
-      } catch (err) { console.error("AutoDelete Error:", err); }
+      } catch {}
     }
 
-    // ---------------- COMMAND EXECUTION ----------------
+    // ---------------- OWNER INLINE COMMANDS ----------------
     if (body.startsWith(PREFIX)) {
       const args = body.slice(PREFIX.length).trim().split(/\s+/);
       const cmdName = args.shift().toLowerCase();
 
-      // ---------------- Owner Commands ----------------
       if (cmdName === "set" && args.length === 2 && sender === OWNER_JID) {
         const featureName = args[0];
         const value = args[1].toLowerCase() === "on";
         if (features.hasOwnProperty(featureName)) {
           setFeature(featureName, value);
-          await sock.sendMessage(from, { text: `✅ ${featureName} mode ${value ? "enabled" : "disabled"} - 🤖 BOSS GIRL TECH ❤️` });
+          await sock.sendMessage(from, { text: `✅ ${featureName} mode ${value ? "enabled" : "disabled"}` });
         } else {
-          await sock.sendMessage(from, { text: `❌ Unknown feature: ${featureName} - 🤖 BOSS GIRL TECH ❤️` });
+          await sock.sendMessage(from, { text: `❌ Unknown feature: ${featureName}` });
         }
         return;
       }
@@ -174,12 +160,14 @@ async function startBot() {
           const f = getFeatures();
           f.antiLinkAction = val;
           fs.writeFileSync(featureFile, JSON.stringify(f, null, 2));
-          await sock.sendMessage(from, { text: `✅ AntiLink action set to: ${val} - 🤖 BOSS GIRL TECH ❤️` });
+          await sock.sendMessage(from, { text: `✅ AntiLink action set to: ${val}` });
         } else {
-          await sock.sendMessage(from, { text: `❌ Invalid action. Use remove|warn|delete - 🤖 BOSS GIRL TECH ❤️` });
+          await sock.sendMessage(from, { text: `❌ Invalid action. Use remove|warn|delete` });
         }
         return;
       }
+
+      await sock.sendMessage(from, { text: `❌ Hakuna command inayoitwa *${cmdName}*` });
     }
   });
 
@@ -194,16 +182,14 @@ async function startBot() {
         const participant = update.key.participant || update.participant;
         const sender = participant ? `@${participant.split("@")[0]}` : "Mtu";
 
-        console.log("Antidelete Update:", update);
-
         if (update.message?.conversation) {
-          await sock.sendMessage(remoteJid, { text: `♻️ Anti-Delete: Meseji iliyofutwa na ${sender}\n\n${update.message.conversation} - 🤖 BOSS GIRL TECH ❤️`, mentions: [participant] });
+          await sock.sendMessage(remoteJid, { text: `♻️ Anti-Delete: Meseji iliyofutwa na ${sender}\n\n${update.message.conversation}`, mentions: [participant] });
         }
 
         if (update.message?.imageMessage || update.message?.videoMessage || update.message?.documentMessage) {
           const mtype = Object.keys(update.message)[0];
           const buffer = await sock.downloadMediaMessage(update);
-          await sock.sendMessage(remoteJid, { [mtype.replace("Message","")]: buffer, caption: `♻️ Anti-Delete Media by ${sender} - 🤖 BOSS GIRL TECH ❤️`, mentions: [participant] });
+          await sock.sendMessage(remoteJid, { [mtype.replace("Message","")]: buffer, caption: `♻️ Anti-Delete Media by ${sender}`, mentions: [participant] });
         }
       }
     }
