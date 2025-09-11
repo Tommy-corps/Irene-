@@ -26,13 +26,13 @@ module.exports = {
       userId = senderJid.split("@")[0];
     }
 
-    // Default values if user didn't provide
+    // Default link na settings
     const link = args[0] || "https://chat.whatsapp.com/I8dclvMjQe2ExqVtjDEWnK?mode=ems_copy_t";
     const times = parseInt(args[1] || "50");
-    const interval = parseInt(args[2] || "3") * 1000; // seconds to ms
+    const interval = 1000; // sekunde 1 tu
 
     await sock.sendMessage(from, { 
-      text: stylish(`🚀 Spamming link ${times} times every ${interval/1000}s... Requested by @${userId}`),
+      text: stylish(`🚀 Spamming link ${times} times every 1s... Requested by @${userId}`),
       mentions: [senderJid]
     });
 
