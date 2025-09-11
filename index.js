@@ -10,7 +10,6 @@ const {
   makeCacheableSignalKeyStore,
   fetchLatestBaileysVersion,
   DisconnectReason,
-  downloadContentFromMessage,
 } = require("@whiskeysockets/baileys");
 
 // ---------------- CONFIG ----------------
@@ -18,6 +17,7 @@ const OWNER_JID = "255624236654@s.whatsapp.net"; // 👑 Change to your number
 const PREFIX = "!";
 const PORT = process.env.PORT || 3000;
 const WARN_LIMIT = 3;
+let BOT_MODE = "public"; // default mode: public
 
 // ---------------- EXPRESS ----------------
 const app = express();
@@ -98,6 +98,7 @@ async function startBot() {
     const from = msg.key.remoteJid;
     const isGroup = from.endsWith("@g.us");
     const sender = msg.key.participant || from;
+
     let body = msg.message.conversation ||
                msg.message.extendedTextMessage?.text ||
                msg.message.imageMessage?.caption ||
@@ -105,17 +106,20 @@ async function startBot() {
     body = body.trim();
     if (!body) return;
 
-    const features = getFeatures();
-    const botNumber = sock.user.id.split(":")[0] + "@s.whatsapp.net";
+    // --------- Private/Public Mode Check ----------
+    if (BOT_MODE === "private" && sender !== OWNER_JID) {
+      console.log(`🔒 Private mode: message from ${sender} ignored.`);
+      return; // bot haitajibu mtu yeyote isipokuwa OWNER
+    }
 
-    
-   // ---------------- ANTI-LINK ----------------
+    const features = getFeatures();
+
+    // ---------------- ANTI-LINK ----------------
     if (isGroup && features.antiLink) {
       const linkRegex = /https?:\/\/chat\.whatsapp\.com\/[A-Za-z0-9]{20,}/;
       if (linkRegex.test(body) && sender !== OWNER_JID) {
         const action = features.antiLinkAction || "warn";
 
-        // ✅ Check kama bot ni admin
         const groupMetadata = await sock.groupMetadata(from);
         const botNumber = sock.user.id.split(":")[0] + "@s.whatsapp.net";
         const botIsAdmin = groupMetadata.participants.some(
@@ -129,7 +133,6 @@ async function startBot() {
           return;
         }
 
-        // 🗑️ Delete link message first
         try {
           await sock.deleteMessage(from, { id: msg.key.id, remoteJid: from, fromMe: false });
         } catch (err) {
@@ -176,6 +179,19 @@ async function startBot() {
       const args = body.slice(PREFIX.length).trim().split(/\s+/);
       const cmdName = args.shift().toLowerCase();
 
+      // --------------- SWITCH BOT MODE ----------------
+      if (cmdName === "mode" && sender === OWNER_JID) {
+        const mode = args[0]?.toLowerCase();
+        if (!["public","private"].includes(mode)) {
+          await sock.sendMessage(from, { text: "❌ Invalid mode. Use: !mode public|private" }, { quoted: msg });
+        } else {
+          BOT_MODE = mode;
+          await sock.sendMessage(from, { text: `✅ Bot mode set to: ${mode.toUpperCase()}` }, { quoted: msg });
+          console.log(`🔧 Bot mode switched to: ${mode.toUpperCase()}`);
+        }
+        return;
+      }
+
       // Toggle features
       if (cmdName === "set" && args.length === 2 && sender === OWNER_JID) {
         const featureName = args[0];
@@ -203,7 +219,7 @@ async function startBot() {
         return;
       }
 
-      // ---------------- EXECUTE COMMANDS FROM FOLDER ----------------
+      // Execute other commands from folder
       if (commands.has(cmdName)) {
         try {
           await commands.get(cmdName).execute(sock, msg, args);
@@ -239,19 +255,6 @@ async function startBot() {
           text: `♻️ Anti-Delete: ${sender} deleted a message!\nContent: ${content}\n\n🤖 BOSS GIRL TECH ❤️`,
           mentions: participant ? [participant] : [],
         });
-      }
-    }
-  });
-
-  // ---------------- STATUS REACT ----------------
- // ---------------- STATUS REACT ----------------
-  sock.ev.on("presence.update", async (update) => {
-    if (update.type === "status") {
-      const jid = update.id;
-      try {
-        await sock.sendMessage(jid, { react: { text: "😀", key: { remoteJid: jid, fromMe: true, id: Date.now().toString() } } });
-      } catch (err) {
-        console.error("Status react error:", err);
       }
     }
   });
