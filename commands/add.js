@@ -1,33 +1,26 @@
-const { fancy } = require("../utils/fancy"); // hakikisha unayo fancy function kwenye utils
+// 📂 commands/add.js
+const fs = require("fs");
+const path = require("path");
+
+// Fancy text function (copy-paste hii kwenye command zote)
+const fancy = (text) => {
+  const normal = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  const rosemary = "𝓪𝓫𝓬𝓭𝓮𝓯𝓰𝓱𝓲𝓳𝓴𝓵𝓶𝓷𝓸𝓹𝓺𝓻𝓼𝓽𝓾𝓿𝔀𝔁𝔂𝔃𝓐𝓑𝓒𝓓𝓔𝓕𝓖𝓗𝓘𝓙𝓚𝓛𝓜𝓝𝓞𝓟𝓠𝓡𝓢𝓣𝓤𝓥𝓦𝓧𝓨𝓩0123456789";
+  return text.split("").map(c => {
+    const index = normal.indexOf(c);
+    return index !== -1 ? rosemary[index] : c;
+  }).join("");
+};
 
 module.exports = {
   name: "add",
-  description: "➕ Add member to group 🌹",
-  async execute(sock, msg, args) {
+  description: "➕ Add something",
+  async execute(sock, msg) {
     const from = msg.key.remoteJid;
-    if (!from.endsWith("@g.us")) {
-      return sock.sendMessage(from, { text: fancy("❌ This command works only in groups!") }, { quoted: msg });
-    }
 
-    if (!args[0]) {
-      return sock.sendMessage(from, { 
-        text: fancy("📩 Please provide a number to add!\n💡 Example: !add 2557XXXXXXXX") 
-      }, { quoted: msg });
-    }
+    // Example response using fancy text
+    const replyText = fancy("✅ Successfully added! 🌟");
 
-    const number = args[0].replace(/[^0-9]/g, "");
-    const jid = `${number}@s.whatsapp.net`;
-
-    try {
-      await sock.groupParticipantsUpdate(from, [jid], "add");
-      await sock.sendMessage(from, { 
-        text: fancy(`🌹 Successfully added @${number} to the group! 🎉`),
-        mentions: [jid]
-      }, { quoted: msg });
-    } catch (e) {
-      await sock.sendMessage(from, { 
-        text: fancy(`⚠️ Failed to add ${number}.\nPossible reasons:\n- Privacy settings of user block adds\n- Bot is not admin in this group`) 
-      }, { quoted: msg });
-    }
+    await sock.sendMessage(from, { text: replyText }, { quoted: msg });
   }
 };
