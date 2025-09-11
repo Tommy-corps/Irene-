@@ -107,11 +107,33 @@ async function startBot() {
     const features = getFeatures();
     const botNumber = sock.user.id.split(":")[0] + "@s.whatsapp.net";
 
-    // ---------------- ANTI-LINK ----------------
+    
+   // ---------------- ANTI-LINK ----------------
     if (isGroup && features.antiLink) {
       const linkRegex = /https?:\/\/chat\.whatsapp\.com\/[A-Za-z0-9]{20,}/;
       if (linkRegex.test(body) && sender !== OWNER_JID) {
         const action = features.antiLinkAction || "warn";
+
+        // ✅ Check kama bot ni admin
+        const groupMetadata = await sock.groupMetadata(from);
+        const botNumber = sock.user.id.split(":")[0] + "@s.whatsapp.net";
+        const botIsAdmin = groupMetadata.participants.some(
+          p => p.id === botNumber && (p.admin === "admin" || p.admin === "superadmin")
+        );
+
+        if (!botIsAdmin) {
+          await sock.sendMessage(from, {
+            text: `⚠️ I am not an admin, so I can't take Anti-Link action!\n\n🤖 BOSS GIRL TECH ❤️`
+          });
+          return;
+        }
+
+        // 🗑️ Delete link message first
+        try {
+          await sock.deleteMessage(from, { id: msg.key.id, remoteJid: from, fromMe: false });
+        } catch (err) {
+          console.error("Failed to delete message:", err);
+        }
 
         if (action === "warn") {
           if (!global.warnMap.has(from)) global.warnMap.set(from, new Map());
@@ -129,16 +151,21 @@ async function startBot() {
             groupWarns.delete(sender);
           } else {
             await sock.sendMessage(from, {
-              text: `⚠️ @${sender.split("@")[0]} received warn ${newWarn}/${WARN_LIMIT}\nDo not send links!\n\n🤖 BOSS GIRL TECH ❤️`,
+              text: `⚠️ @${sender.split("@")[0]} received warn ${newWarn}/${WARN_LIMIT}\nLink was deleted!\n\n🤖 BOSS GIRL TECH ❤️`,
               mentions: [sender],
             });
           }
         } else if (action === "remove") {
-          await sock.sendMessage(from, { text: `🚫 @${sender.split("@")[0]} removed for sending link!\n\n🤖 BOSS GIRL TECH ❤️`, mentions: [sender] });
+          await sock.sendMessage(from, {
+            text: `🚫 @${sender.split("@")[0]} removed for sending link!\n\n🤖 BOSS GIRL TECH ❤️`,
+            mentions: [sender],
+          });
           await sock.groupParticipantsUpdate(from, [sender], "remove").catch(() => {});
         } else if (action === "delete") {
-          await sock.sendMessage(from, { text: `🗑️ Link deleted!\n\n🤖 BOSS GIRL TECH ❤️`, mentions: [sender] });
-          await sock.deleteMessage(from, { id: msg.key.id, remoteJid: from, fromMe: false }).catch(() => {});
+          await sock.sendMessage(from, {
+            text: `🗑️ Link deleted!\n\n🤖 BOSS GIRL TECH ❤️`,
+            mentions: [sender],
+          });
         }
       }
     }
