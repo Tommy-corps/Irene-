@@ -3,19 +3,19 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 
-// Rosemary Stylish Font Converter 🌹
+// Tiny/Compact Stylish Font Converter ✨
 const fancy = (text) => {
   const normal = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  const rosemary = "𝓪𝓫𝓬𝓭𝓮𝓯𝓰𝓱𝓲𝓳𝓴𝓵𝓶𝓷𝓸𝓹𝓺𝓻𝓼𝓽𝓾𝓿𝔀𝔁𝔂𝔃𝓐𝓑𝓒𝓓𝓔𝓕𝓖𝓗𝓘𝓙𝓚𝓛𝓜𝓝𝓞𝓟𝓠𝓡𝓢𝓣𝓤𝓥𝓦𝓧𝓨𝓩0123456789";
+  const tiny = "ᴀʙᴄᴅᴇғɢʜɪᴊᴋʟᴍɴᴏᴘǫʀsᴛᴜᴠᴡxʏᴢᴬᴮᶜᴰᴱᶠᴳᴴᴵᴶᴷᴸᴹᴺᴼᴾQᴿˢᵀᵁⱽᵂˣʸᶻ0123456789";
   return text.split("").map(c => {
     const index = normal.indexOf(c);
-    return index !== -1 ? rosemary[index] : c;
+    return index !== -1 ? tiny[index] : c;
   }).join("");
 };
 
 module.exports = {
   name: "menu",
-  description: "📜 Show all bot commands with ultra-modern style",
+  description: "📜 Show all bot commands with modern tiny style",
   async execute(sock, msg) {
     const from = msg.key.remoteJid;
 
@@ -24,7 +24,7 @@ module.exports = {
     const files = fs.readdirSync(commandsPath).filter(file => file.endsWith(".js"));
     const commandList = files.map(file => {
       const cmd = require(path.join(commandsPath, file));
-      return `✨ ${cmd.name}`;
+      return `✨ ${cmd.name}`; // majina ya commands hayatumii fancy font
     }).join("\n");
 
     // System info
@@ -35,10 +35,10 @@ module.exports = {
 
     const menuText = `
 ╔═════════════════════════╗
-║ ${fancy("🌟🤖 BOSS GIRL TECH ❤️🌟")} ║
+║ ${fancy("🌟❤️ BOSS GIRL TECH ❤️🌟")} ║
 ╠═════════════════════════╣
 ║ ${fancy("📜 Commands Available:")} ║
-${commandList.split("\n").map(c => `║ ${fancy(c)} ║`).join("\n")}
+${commandList.split("\n").map(c => `║ ${c} ║`).join("\n")}  ← majina ya commands hayatumii tiny font
 ╠═════════════════════════╣
 ║ ${fancy(`💾 RAM: ${ramUsage}`)} ║
 ║ ${fancy(`🖥️ Host: ${hostName}`)} ║
@@ -47,7 +47,7 @@ ${commandList.split("\n").map(c => `║ ${fancy(c)} ║`).join("\n")}
 ╠═════════════════════════╣
 ║ ${fancy("👑 Owner: 255624236654")} ║
 ║ ${fancy("⚡ Prefix: !")} ║
-║ ${fancy("💻 Powered by Baileys")} ║
+║ ${fancy("💻 Powered by Boss girl💕")} ║
 ╚═════════════════════════╝
     `.trim();
 
