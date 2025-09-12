@@ -16,11 +16,11 @@ const {
 } = require("@whiskeysockets/baileys");
 
 // ---------------- CONFIG ----------------
-const OWNER_JID = "255624236654@s.whatsapp.net"; // 👑 Change to your number
+const OWNER_JID = "255624236654@s.whatsapp.net";
 const PREFIX = "!";
 const PORT = process.env.PORT || 3000;
 const WARN_LIMIT = 3;
-let BOT_MODE = "public"; // default mode: public
+let BOT_MODE = "public";
 
 // ---------------- EXPRESS ----------------
 const app = express();
@@ -36,20 +36,21 @@ const defaultFeatures = {
   antiLinkAction: "warn",
   faketyping: true,
   fakerecording: true,
-  autoViewOnce: true // ✅ New feature added
+  autoViewOnce: true,
+  autoViewStatus: true // new
 };
 if (!fs.existsSync(featureFile)) fs.writeFileSync(featureFile, JSON.stringify(defaultFeatures, null, 2));
 
 function getFeatures() { return JSON.parse(fs.readFileSync(featureFile)); }
 function saveFeatures(fObj) { fs.writeFileSync(featureFile, JSON.stringify(fObj, null, 2)); }
-function setFeature(name, value) { 
-  const f = getFeatures(); 
-  f[name] = value; 
+function setFeature(name, value) {
+  const f = getFeatures();
+  f[name] = value;
   saveFeatures(f);
 }
 
 // ---------------- GLOBAL WARN MAP ----------------
-if (!global.warnMap) global.warnMap = new Map(); // groupId -> {userId -> count}
+if (!global.warnMap) global.warnMap = new Map();
 
 // ---------------- LOAD COMMANDS ----------------
 const commands = new Map();
@@ -63,9 +64,7 @@ if (fs.existsSync(commandsPath)) {
         commands.set(command.name.toLowerCase(), command);
         console.log(`✅ Loaded command: ${command.name}`);
       }
-    } catch (err) {
-      console.error(`❌ Failed to load command ${file}:`, err);
-    }
+    } catch (err) { console.error(`❌ Failed to load command ${file}:`, err); }
   }
 } else {
   fs.mkdirSync(commandsPath);
@@ -78,9 +77,7 @@ async function doFakeTyping(sock, jid, duration = 1500) {
     await sock.sendPresenceUpdate("composing", jid);
     await new Promise(r => setTimeout(r, duration));
     await sock.sendPresenceUpdate("paused", jid);
-  } catch (e) {
-    console.error("doFakeTyping error:", e);
-  }
+  } catch (e) { console.error("doFakeTyping error:", e); }
 }
 
 async function doFakeRecording(sock, jid, duration = 2500) {
@@ -88,9 +85,7 @@ async function doFakeRecording(sock, jid, duration = 2500) {
     await sock.sendPresenceUpdate("recording", jid);
     await new Promise(r => setTimeout(r, duration));
     await sock.sendPresenceUpdate("paused", jid);
-  } catch (e) {
-    console.error("doFakeRecording error:", e);
-  }
+  } catch (e) { console.error("doFakeRecording error:", e); }
 }
 
 // ---------------- START BOT ----------------
@@ -120,15 +115,35 @@ async function startBot() {
         f.faketyping = true;
         f.fakerecording = true;
         saveFeatures(f);
-        console.log("🔧 Auto-enabled faketyping & fakerecording.");
-      } catch (e) {
-        console.error("Failed to auto-enable fake features:", e);
-      }
+      } catch (e) { console.error(e); }
       await doFakeTyping(sock, OWNER_JID, 1200);
       await doFakeRecording(sock, OWNER_JID, 900);
       await sock.sendMessage(OWNER_JID, { text: "🤖 BOSS GIRL TECH ❤️ Bot online! faketyping & fakerecording ON ✅" });
     }
   });
+
+  // ---------------- AUTO VIEW STATUS + RANDOM EMOJI ----------------
+  const randomEmojis = ["❤️","👍","😂","🔥","😎","🤩","💯","✨","🥰","😜"];
+  async function autoViewStatus() {
+    const features = getFeatures();
+    if (!features.autoViewStatus) return;
+
+    try {
+      const contacts = Object.keys(sock.store.contacts);
+      for (const jid of contacts) {
+        if (jid === sock.user.id.split(":")[0] + "@s.whatsapp.net") continue;
+        const updates = await sock.status(jid);
+        if (!updates || !updates.statuses) continue;
+
+        for (const u of updates.statuses) {
+          await sock.sendReadReceipt(jid, u.key.participant, [u.key.id]);
+          const emoji = randomEmojis[Math.floor(Math.random()*randomEmojis.length)];
+          await sock.sendMessage(jid, { react: { text: emoji, key: u.key } });
+        }
+      }
+    } catch (e) { console.error("AutoViewStatus error:", e); }
+  }
+  setInterval(autoViewStatus, 25000); // run every 25s
 
   // ---------------- MESSAGE HANDLER ----------------
   sock.ev.on("messages.upsert", async ({ messages }) => {
@@ -150,7 +165,6 @@ async function startBot() {
 
     const features = getFeatures();
 
-    // 🟢 AUTO PRESENCE ON EVERY MESSAGE
     if (features.faketyping) await doFakeTyping(sock, from, 1000);
     if (features.fakerecording) await doFakeRecording(sock, from, 1500);
 
@@ -159,7 +173,6 @@ async function startBot() {
       const linkRegex = /https?:\/\/chat\.whatsapp\.com\/[A-Za-z0-9]{20,}/;
       if (linkRegex.test(body) && sender !== OWNER_JID) {
         const action = features.antiLinkAction || "warn";
-
         const groupMetadata = await sock.groupMetadata(from);
         const botNumber = sock.user.id.split(":")[0] + "@s.whatsapp.net";
         const botIsAdmin = groupMetadata.participants.some(
@@ -199,18 +212,16 @@ async function startBot() {
       }
     }
 
-    // ---------------- AUTO VIEW-ONCE (VV2) ----------------
+    // ---------------- AUTO VIEW-ONCE ----------------
     if (features.autoViewOnce) {
       try {
         if (msg.message?.viewOnceMessage?.message) {
           const type = Object.keys(msg.message.viewOnceMessage.message)[0];
           const media = msg.message.viewOnceMessage.message[type];
-
           const buffer = [];
           const stream = await downloadContentFromMessage(media, type.replace("Message", "").toLowerCase());
           for await (const chunk of stream) buffer.push(chunk);
           const mediaBuffer = Buffer.concat(buffer);
-
           const prepared = await prepareWAMessageMedia({ [type.replace("Message","").toLowerCase()]: mediaBuffer }, { upload: sock.waUploadToServer });
           const content = generateForwardMessageContent(prepared, false);
           await sock.relayMessage(from, content, { messageId: msg.key.id });
