@@ -9,7 +9,7 @@ const {
   useMultiFileAuthState,
   makeCacheableSignalKeyStore,
   fetchLatestBaileysVersion,
-  DisconnectReason,
+  DisconnectReason
 } = require("@whiskeysockets/baileys");
 
 // ---------------- CONFIG ----------------
@@ -31,13 +31,17 @@ const defaultFeatures = {
   antidelete: true,
   antiLink: true,
   antiLinkAction: "warn", // warn|remove|delete
+  faketyping: true,
+  fakerecording: true
 };
 if (!fs.existsSync(featureFile)) fs.writeFileSync(featureFile, JSON.stringify(defaultFeatures, null, 2));
+
 function getFeatures() { return JSON.parse(fs.readFileSync(featureFile)); }
+function saveFeatures(fObj) { fs.writeFileSync(featureFile, JSON.stringify(fObj, null, 2)); }
 function setFeature(name, value) { 
   const f = getFeatures(); 
   f[name] = value; 
-  fs.writeFileSync(featureFile, JSON.stringify(f, null, 2)); 
+  saveFeatures(f);
 }
 
 // ---------------- GLOBAL WARN MAP ----------------
@@ -64,6 +68,27 @@ if (fs.existsSync(commandsPath)) {
   console.log("📂 Created commands folder.");
 }
 
+// ---------------- PRESENCE HELPERS ----------------
+async function doFakeTyping(sock, jid, duration = 1500) {
+  try {
+    await sock.sendPresenceUpdate("composing", jid);
+    await new Promise(r => setTimeout(r, duration));
+    await sock.sendPresenceUpdate("paused", jid);
+  } catch (e) {
+    console.error("doFakeTyping error:", e);
+  }
+}
+
+async function doFakeRecording(sock, jid, duration = 2500) {
+  try {
+    await sock.sendPresenceUpdate("recording", jid);
+    await new Promise(r => setTimeout(r, duration));
+    await sock.sendPresenceUpdate("paused", jid);
+  } catch (e) {
+    console.error("doFakeRecording error:", e);
+  }
+}
+
 // ---------------- START BOT ----------------
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState("./auth_info");
@@ -71,7 +96,7 @@ async function startBot() {
 
   const sock = makeWASocket({
     version,
-    printQRInTerminal: false,
+    printQRInTerminal: true,
     auth: {
       creds: state.creds,
       keys: makeCacheableSignalKeyStore(state.keys, P({ level: "silent" })),
@@ -86,7 +111,18 @@ async function startBot() {
       if ((lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut) startBot();
     } else if (connection === "open") {
       console.log("✅ Bot connected!");
-      await sock.sendMessage(OWNER_JID, { text: "🤖 BOSS GIRL TECH ❤️ Bot online! All features are OFF by default." });
+      try {
+        const f = getFeatures();
+        f.faketyping = true;
+        f.fakerecording = true;
+        saveFeatures(f);
+        console.log("🔧 Auto-enabled faketyping & fakerecording.");
+      } catch (e) {
+        console.error("Failed to auto-enable fake features:", e);
+      }
+      await doFakeTyping(sock, OWNER_JID, 1200);
+      await doFakeRecording(sock, OWNER_JID, 900);
+      await sock.sendMessage(OWNER_JID, { text: "🤖 BOSS GIRL TECH ❤️ Bot online! faketyping & fakerecording ON ✅" });
     }
   });
 
@@ -106,13 +142,13 @@ async function startBot() {
     body = body.trim();
     if (!body) return;
 
-    // --------- Private/Public Mode Check ----------
-    if (BOT_MODE === "private" && sender !== OWNER_JID) {
-      console.log(`🔒 Private mode: message from ${sender} ignored.`);
-      return; // bot haitajibu mtu yeyote isipokuwa OWNER
-    }
+    if (BOT_MODE === "private" && sender !== OWNER_JID) return;
 
     const features = getFeatures();
+
+    // 🟢 AUTO PRESENCE ON EVERY MESSAGE
+    if (features.faketyping) await doFakeTyping(sock, from, 1000);
+    if (features.fakerecording) await doFakeRecording(sock, from, 1500);
 
     // ---------------- ANTI-LINK ----------------
     if (isGroup && features.antiLink) {
@@ -127,17 +163,11 @@ async function startBot() {
         );
 
         if (!botIsAdmin) {
-          await sock.sendMessage(from, {
-            text: `⚠️ I am not an admin, so I can't take Anti-Link action!\n\n🤖 BOSS GIRL TECH ❤️`
-          });
+          await sock.sendMessage(from, { text: "⚠️ I am not admin, I can't remove links!\n\n🤖 BOSS GIRL TECH ❤️" });
           return;
         }
 
-        try {
-          await sock.deleteMessage(from, { id: msg.key.id, remoteJid: from, fromMe: false });
-        } catch (err) {
-          console.error("Failed to delete message:", err);
-        }
+        try { await sock.deleteMessage(from, { id: msg.key.id, remoteJid: from, fromMe: false }); } catch {}
 
         if (action === "warn") {
           if (!global.warnMap.has(from)) global.warnMap.set(from, new Map());
@@ -148,28 +178,19 @@ async function startBot() {
 
           if (newWarn >= WARN_LIMIT) {
             await sock.sendMessage(from, {
-              text: `🚨 @${sender.split("@")[0]} has reached the warn limit (${WARN_LIMIT})!\nRemoved from group.\n\n🤖 BOSS GIRL TECH ❤️`,
+              text: `🚨 @${sender.split("@")[0]} reached warn limit!\nRemoved from group.`,
               mentions: [sender],
             });
             await sock.groupParticipantsUpdate(from, [sender], "remove").catch(() => {});
             groupWarns.delete(sender);
           } else {
             await sock.sendMessage(from, {
-              text: `⚠️ @${sender.split("@")[0]} received warn ${newWarn}/${WARN_LIMIT}\nLink was deleted!\n\n🤖 BOSS GIRL TECH ❤️`,
+              text: `⚠️ @${sender.split("@")[0]} warned ${newWarn}/${WARN_LIMIT}\nLink deleted!`,
               mentions: [sender],
             });
           }
         } else if (action === "remove") {
-          await sock.sendMessage(from, {
-            text: `🚫 @${sender.split("@")[0]} removed for sending link!\n\n🤖 BOSS GIRL TECH ❤️`,
-            mentions: [sender],
-          });
           await sock.groupParticipantsUpdate(from, [sender], "remove").catch(() => {});
-        } else if (action === "delete") {
-          await sock.sendMessage(from, {
-            text: `🗑️ Link deleted!\n\n🤖 BOSS GIRL TECH ❤️`,
-            mentions: [sender],
-          });
         }
       }
     }
@@ -179,7 +200,6 @@ async function startBot() {
       const args = body.slice(PREFIX.length).trim().split(/\s+/);
       const cmdName = args.shift().toLowerCase();
 
-      // --------------- SWITCH BOT MODE ----------------
       if (cmdName === "mode" && sender === OWNER_JID) {
         const mode = args[0]?.toLowerCase();
         if (!["public","private"].includes(mode)) {
@@ -187,48 +207,25 @@ async function startBot() {
         } else {
           BOT_MODE = mode;
           await sock.sendMessage(from, { text: `✅ Bot mode set to: ${mode.toUpperCase()}` }, { quoted: msg });
-          console.log(`🔧 Bot mode switched to: ${mode.toUpperCase()}`);
         }
         return;
       }
 
-      // Toggle features
       if (cmdName === "set" && args.length === 2 && sender === OWNER_JID) {
         const featureName = args[0];
         const value = args[1].toLowerCase() === "on";
         if (features.hasOwnProperty(featureName)) {
           setFeature(featureName, value);
-          await sock.sendMessage(from, { text: `✅ ${featureName} mode ${value ? "enabled" : "disabled"}` });
+          await sock.sendMessage(from, { text: `✅ ${featureName} ${value ? "enabled" : "disabled"}` });
         } else {
           await sock.sendMessage(from, { text: `❌ Unknown feature: ${featureName}` });
         }
         return;
       }
 
-      // AntiLink action
-      if (cmdName === "antilink" && args[0] === "action" && sender === OWNER_JID) {
-        const val = args[1]?.toLowerCase();
-        if (["remove","warn","delete"].includes(val)) {
-          const f = getFeatures();
-          f.antiLinkAction = val;
-          fs.writeFileSync(featureFile, JSON.stringify(f, null, 2));
-          await sock.sendMessage(from, { text: `✅ AntiLink action set to: ${val}` });
-        } else {
-          await sock.sendMessage(from, { text: `❌ Invalid action. Use remove|warn|delete` });
-        }
-        return;
-      }
-
-      // Execute other commands from folder
       if (commands.has(cmdName)) {
-        try {
-          await commands.get(cmdName).execute(sock, msg, args);
-        } catch (err) {
-          console.error(`❌ Error executing command ${cmdName}:`, err);
-          await sock.sendMessage(from, { text: `❌ Error executing command: ${cmdName}` });
-        }
-      } else {
-        await sock.sendMessage(from, { text: `❌ Unknown command: ${cmdName}` });
+        try { await commands.get(cmdName).execute(sock, msg, args); }
+        catch (err) { await sock.sendMessage(from, { text: `❌ Error executing ${cmdName}` }); }
       }
     }
   });
@@ -237,7 +234,6 @@ async function startBot() {
   sock.ev.on("messages.update", async (updates) => {
     const features = getFeatures();
     if (!features.antidelete) return;
-
     for (const update of updates) {
       if (update.update === "message-revoke") {
         const remoteJid = update.key.remoteJid;
@@ -252,7 +248,7 @@ async function startBot() {
         else content = "[📎 Unknown message type]";
 
         await sock.sendMessage(remoteJid, {
-          text: `♻️ Anti-Delete: ${sender} deleted a message!\nContent: ${content}\n\n🤖 BOSS GIRL TECH ❤️`,
+          text: `♻️ Anti-Delete: ${sender} deleted a message!\nContent: ${content}`,
           mentions: participant ? [participant] : [],
         });
       }
