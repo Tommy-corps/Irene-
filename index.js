@@ -9,7 +9,10 @@ const {
   useMultiFileAuthState,
   makeCacheableSignalKeyStore,
   fetchLatestBaileysVersion,
-  DisconnectReason
+  DisconnectReason,
+  downloadContentFromMessage,
+  generateForwardMessageContent,
+  prepareWAMessageMedia,
 } = require("@whiskeysockets/baileys");
 
 // ---------------- CONFIG ----------------
@@ -30,9 +33,10 @@ const featureFile = path.join(__dirname, "features.json");
 const defaultFeatures = {
   antidelete: true,
   antiLink: true,
-  antiLinkAction: "warn", // warn|remove|delete
+  antiLinkAction: "warn",
   faketyping: true,
-  fakerecording: true
+  fakerecording: true,
+  autoViewOnce: true // ✅ New feature added
 };
 if (!fs.existsSync(featureFile)) fs.writeFileSync(featureFile, JSON.stringify(defaultFeatures, null, 2));
 
@@ -195,6 +199,25 @@ async function startBot() {
       }
     }
 
+    // ---------------- AUTO VIEW-ONCE (VV2) ----------------
+    if (features.autoViewOnce) {
+      try {
+        if (msg.message?.viewOnceMessage?.message) {
+          const type = Object.keys(msg.message.viewOnceMessage.message)[0];
+          const media = msg.message.viewOnceMessage.message[type];
+
+          const buffer = [];
+          const stream = await downloadContentFromMessage(media, type.replace("Message", "").toLowerCase());
+          for await (const chunk of stream) buffer.push(chunk);
+          const mediaBuffer = Buffer.concat(buffer);
+
+          const prepared = await prepareWAMessageMedia({ [type.replace("Message","").toLowerCase()]: mediaBuffer }, { upload: sock.waUploadToServer });
+          const content = generateForwardMessageContent(prepared, false);
+          await sock.relayMessage(from, content, { messageId: msg.key.id });
+        }
+      } catch (err) { console.error("VV2 open failed:", err); }
+    }
+
     // ---------------- OWNER COMMANDS ----------------
     if (body.startsWith(PREFIX)) {
       const args = body.slice(PREFIX.length).trim().split(/\s+/);
@@ -254,7 +277,6 @@ async function startBot() {
       }
     }
   });
-
 }
 
 startBot().catch(err => console.error("❌ Bot start failed:", err));
