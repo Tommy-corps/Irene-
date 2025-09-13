@@ -1,3 +1,108 @@
+require("dotenv").config();
+const fs = require("fs");
+const path = require("path");
+const os = require("os");
+const P = require("pino");
+const express = require("express");
+const {
+  default: makeWASocket,
+  useMultiFileAuthState,
+  makeCacheableSignalKeyStore,
+  fetchLatestBaileysVersion,
+  DisconnectReason,
+  downloadContentFromMessage,
+  generateForwardMessageContent,
+  prepareWAMessageMedia,
+} = require("@whiskeysockets/baileys");
+
+// ---------------- CONFIG ----------------
+const OWNER_JID = "255624236654@s.whatsapp.net"; // 👑 Change to your number
+const PREFIX = "!";
+const PORT = process.env.PORT || 3000;
+const WARN_LIMIT = 3;
+let BOT_MODE = "public"; // default mode: public
+
+// ---------------- EXPRESS ----------------
+const app = express();
+app.use(express.json());
+app.get("/", (req, res) => res.send("🤖 BOSS GIRL TECH ❤️ Bot is running!"));
+app.listen(PORT, () => console.log(`✅ Express running on port ${PORT}`));
+
+// ---------------- FEATURES ----------------
+const featureFile = path.join(__dirname, "features.json");
+const defaultFeatures = {
+  antidelete: true,
+  antiLink: true,
+  antiLinkAction: "warn",
+  faketyping: true,
+  fakerecording: true,
+  autoViewOnce: true // ✅ New feature added
+};
+if (!fs.existsSync(featureFile)) fs.writeFileSync(featureFile, JSON.stringify(defaultFeatures, null, 2));
+
+function getFeatures() { return JSON.parse(fs.readFileSync(featureFile)); }
+function saveFeatures(fObj) { fs.writeFileSync(featureFile, JSON.stringify(fObj, null, 2)); }
+function setFeature(name, value) { 
+  const f = getFeatures(); 
+  f[name] = value; 
+  saveFeatures(f);
+}
+
+// ---------------- GLOBAL WARN MAP ----------------
+if (!global.warnMap) global.warnMap = new Map(); // groupId -> {userId -> count}
+
+// ---------------- LOAD COMMANDS ----------------
+const commands = new Map();
+const commandsPath = path.join(__dirname, "commands");
+if (fs.existsSync(commandsPath)) {
+  const files = fs.readdirSync(commandsPath).filter(f => f.endsWith(".js"));
+  for (const file of files) {
+    try {
+      const command = require(path.join(commandsPath, file));
+      if (command.name && typeof command.execute === "function") {
+        commands.set(command.name.toLowerCase(), command);
+        console.log(`✅ Loaded command: ${command.name}`);
+      }
+    } catch (err) {
+      console.error(`❌ Failed to load command ${file}:`, err);
+    }
+  }
+} else {
+  fs.mkdirSync(commandsPath);
+  console.log("📂 Created commands folder.");
+}
+
+// ---------------- PRESENCE HELPERS ----------------
+async function doFakeTyping(sock, jid, duration = 1500) {
+  try {
+    await sock.sendPresenceUpdate("composing", jid);
+    await new Promise(r => setTimeout(r, duration));
+    await sock.sendPresenceUpdate("paused", jid);
+  } catch (e) {
+    console.error("doFakeTyping error:", e);
+  }
+}
+
+async function doFakeRecording(sock, jid, duration = 2500) {
+  try {
+    await sock.sendPresenceUpdate("recording", jid);
+    await new Promise(r => setTimeout(r, duration));
+    await sock.sendPresenceUpdate("paused", jid);
+  } catch (e) {
+    console.error("doFakeRecording error:", e);
+  }
+}
+
+// ---------------- START BOT ----------------
+async function startBot() {
+  const { state, saveCreds } = await useMultiFileAuthState("./auth_info");
+  const { version } = await fetchLatestBaileysVersion();
+
+  const sock = makeWASocket({
+    version,
+    printQRInTerminal: true,
+    auth: {
+      creds: state.creds,
       keys: makeCacheableSignalKeyStore(state.keys, P({ level: "silent" })),
     },
     logger: P({ level: "silent" }),
@@ -15,35 +120,15 @@
         f.faketyping = true;
         f.fakerecording = true;
         saveFeatures(f);
-      } catch (e) { console.error(e); }
+        console.log("🔧 Auto-enabled faketyping & fakerecording.");
+      } catch (e) {
+        console.error("Failed to auto-enable fake features:", e);
+      }
       await doFakeTyping(sock, OWNER_JID, 1200);
       await doFakeRecording(sock, OWNER_JID, 900);
       await sock.sendMessage(OWNER_JID, { text: "🤖 BOSS GIRL TECH ❤️ Bot online! faketyping & fakerecording ON ✅" });
     }
   });
-
-  // ---------------- AUTO VIEW STATUS + RANDOM EMOJI ----------------
-  const randomEmojis = ["❤️","👍","😂","🔥","😎","🤩","💯","✨","🥰","😜"];
-  async function autoViewStatus() {
-    const features = getFeatures();
-    if (!features.autoViewStatus) return;
-
-    try {
-      const contacts = Object.keys(sock.store.contacts);
-      for (const jid of contacts) {
-        if (jid === sock.user.id.split(":")[0] + "@s.whatsapp.net") continue;
-        const updates = await sock.status(jid);
-        if (!updates || !updates.statuses) continue;
-
-        for (const u of updates.statuses) {
-          await sock.sendReadReceipt(jid, u.key.participant, [u.key.id]);
-          const emoji = randomEmojis[Math.floor(Math.random()*randomEmojis.length)];
-          await sock.sendMessage(jid, { react: { text: emoji, key: u.key } });
-        }
-      }
-    } catch (e) { console.error("AutoViewStatus error:", e); }
-  }
-  setInterval(autoViewStatus, 25000); // run every 25s
 
   // ---------------- MESSAGE HANDLER ----------------
   sock.ev.on("messages.upsert", async ({ messages }) => {
@@ -65,6 +150,7 @@
 
     const features = getFeatures();
 
+    // 🟢 AUTO PRESENCE ON EVERY MESSAGE
     if (features.faketyping) await doFakeTyping(sock, from, 1000);
     if (features.fakerecording) await doFakeRecording(sock, from, 1500);
 
@@ -73,6 +159,7 @@
       const linkRegex = /https?:\/\/chat\.whatsapp\.com\/[A-Za-z0-9]{20,}/;
       if (linkRegex.test(body) && sender !== OWNER_JID) {
         const action = features.antiLinkAction || "warn";
+
         const groupMetadata = await sock.groupMetadata(from);
         const botNumber = sock.user.id.split(":")[0] + "@s.whatsapp.net";
         const botIsAdmin = groupMetadata.participants.some(
@@ -112,16 +199,18 @@
       }
     }
 
-    // ---------------- AUTO VIEW-ONCE ----------------
+    // ---------------- AUTO VIEW-ONCE (VV2) ----------------
     if (features.autoViewOnce) {
       try {
         if (msg.message?.viewOnceMessage?.message) {
           const type = Object.keys(msg.message.viewOnceMessage.message)[0];
           const media = msg.message.viewOnceMessage.message[type];
+
           const buffer = [];
           const stream = await downloadContentFromMessage(media, type.replace("Message", "").toLowerCase());
           for await (const chunk of stream) buffer.push(chunk);
           const mediaBuffer = Buffer.concat(buffer);
+
           const prepared = await prepareWAMessageMedia({ [type.replace("Message","").toLowerCase()]: mediaBuffer }, { upload: sock.waUploadToServer });
           const content = generateForwardMessageContent(prepared, false);
           await sock.relayMessage(from, content, { messageId: msg.key.id });
